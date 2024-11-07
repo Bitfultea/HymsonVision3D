@@ -1,0 +1,46 @@
+# file(GLOB_RECURSE UNITTEST_HEADER "*.h")
+add_executable(LoggerTest
+  # ${UNITTEST_HEADER}
+  logger_test.cpp
+)
+
+add_executable(TorchTest
+  test_torch.cpp
+)
+
+add_executable(TorchTest2
+  test_torch_2.cpp
+)
+
+enable_testing()
+
+add_executable(testGoogleTest
+  google_test_sample.cpp
+)
+
+target_link_libraries(
+  testGoogleTest
+  gtest
+  gmock
+  gtest_main
+  utility_lib
+)
+
+
+target_link_libraries(
+  LoggerTest
+  utility_lib
+)
+
+target_link_libraries(
+  TorchTest
+  "${TORCH_LIBRARIES}"
+)
+
+target_link_libraries(
+  TorchTest2
+  "${TORCH_LIBRARIES}"
+)
+
+include(GoogleTest)
+gtest_discover_tests(testGoogleTest)
