@@ -16,6 +16,7 @@ set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
 # find the necessary packages 
 find_package(PythonInterp REQUIRED) # for libtorch depenency
 find_package(spdlog REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(fmt REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Threads REQUIRED)
@@ -74,6 +75,8 @@ endif()
 
 # Utility Library
 add_subdirectory(utility)
+
+add_subdirectory(core)
 
 # geometry
 add_subdirectory(geometry)
