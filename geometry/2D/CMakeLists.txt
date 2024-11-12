@@ -7,4 +7,4 @@ add_library(geometry_2d_lib SHARED ${2D_source})
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Link libraries
-target_link_libraries(geometry_2d_lib utility_lib ${OpenCV_LIBS})
+target_link_libraries(geometry_2d_lib utility_lib)

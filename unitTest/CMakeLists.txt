@@ -12,6 +12,9 @@ add_executable(TorchTest2
   test_torch_2.cpp
 )
 
+add_executable(ConvertTiff
+  convert_tiff.cpp)
+
 enable_testing()
 
 add_executable(testGoogleTest
@@ -40,6 +43,11 @@ target_link_libraries(
 target_link_libraries(
   TorchTest2
   "${TORCH_LIBRARIES}"
+)
+
+target_link_libraries(
+  ConvertTiff
+  core_lib
 )
 
 include(GoogleTest)

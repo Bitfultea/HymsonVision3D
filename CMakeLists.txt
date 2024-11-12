@@ -22,6 +22,7 @@ find_package(OpenCV REQUIRED)
 find_package(Threads REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Torch REQUIRED)
+find_package(PCL REQUIRED)
 
 
 include(FetchContent)
@@ -38,6 +39,7 @@ FetchContent_MakeAvailable(googletest)
 set(INCLUDE_DIRS
   ${PROJECT_SOURCE_DIR}/geometry
   ${PROJECT_SOURCE_DIR}/utility
+  ${PROJECT_SOURCE_DIR}/core
   # ${CMAKE_CURRENT_SOURCE_DIR}/
 )
 
