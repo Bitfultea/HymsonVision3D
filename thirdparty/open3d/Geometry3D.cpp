@@ -1,6 +1,18 @@
+// ----------------------------------------------------------------------------
+// -                        Open3D: www.open3d.org                            -
+// ----------------------------------------------------------------------------
+// Copyright (c) 2018-2023 www.open3d.org
+// SPDX-License-Identifier: MIT
+// ----------------------------------------------------------------------------
+
 #include "Geometry3D.h"
 
-namespace hymson3d {
+#include <Eigen/Dense>
+#include <numeric>
+
+#include "Logging.h"
+
+namespace open3d {
 namespace geometry {
 
 Geometry3D& Geometry3D::Rotate(const Eigen::Matrix3d& R) {
@@ -48,7 +60,8 @@ void Geometry3D::ResizeAndPaintUniformColor(
     colors.resize(size);
     Eigen::Vector3d clipped_color = color;
     if (color.minCoeff() < 0 || color.maxCoeff() > 1) {
-        LOG_WARN("invalid color in PaintUniformColor, clipping to [0, 1]");
+        utility::LogWarning(
+                "invalid color in PaintUniformColor, clipping to [0, 1]");
         clipped_color = clipped_color.array()
                                 .max(Eigen::Vector3d(0, 0, 0).array())
                                 .matrix();
@@ -60,6 +73,7 @@ void Geometry3D::ResizeAndPaintUniformColor(
         colors[i] = clipped_color;
     }
 }
+
 void Geometry3D::TransformPoints(const Eigen::Matrix4d& transformation,
                                  std::vector<Eigen::Vector3d>& points) const {
     for (auto& point : points) {
@@ -132,5 +146,64 @@ void Geometry3D::RotateCovariances(
     }
 }
 
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromXYZ(
+        const Eigen::Vector3d& rotation) {
+    return open3d::utility::RotationMatrixX(rotation(0)) *
+           open3d::utility::RotationMatrixY(rotation(1)) *
+           open3d::utility::RotationMatrixZ(rotation(2));
+}
+
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromYZX(
+        const Eigen::Vector3d& rotation) {
+    return open3d::utility::RotationMatrixY(rotation(0)) *
+           open3d::utility::RotationMatrixZ(rotation(1)) *
+           open3d::utility::RotationMatrixX(rotation(2));
+}
+
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromZXY(
+        const Eigen::Vector3d& rotation) {
+    return open3d::utility::RotationMatrixZ(rotation(0)) *
+           open3d::utility::RotationMatrixX(rotation(1)) *
+           open3d::utility::RotationMatrixY(rotation(2));
+}
+
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromXZY(
+        const Eigen::Vector3d& rotation) {
+    return open3d::utility::RotationMatrixX(rotation(0)) *
+           open3d::utility::RotationMatrixZ(rotation(1)) *
+           open3d::utility::RotationMatrixY(rotation(2));
+}
+
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromZYX(
+        const Eigen::Vector3d& rotation) {
+    return open3d::utility::RotationMatrixZ(rotation(0)) *
+           open3d::utility::RotationMatrixY(rotation(1)) *
+           open3d::utility::RotationMatrixX(rotation(2));
+}
+
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromYXZ(
+        const Eigen::Vector3d& rotation) {
+    return open3d::utility::RotationMatrixY(rotation(0)) *
+           open3d::utility::RotationMatrixX(rotation(1)) *
+           open3d::utility::RotationMatrixZ(rotation(2));
+}
+
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromAxisAngle(
+        const Eigen::Vector3d& rotation) {
+    const double phi = rotation.norm();
+    if (phi > 0) {
+        return Eigen::AngleAxisd(phi, rotation / phi).toRotationMatrix();
+    }
+    return Eigen::Matrix3d::Identity();
+}
+
+Eigen::Matrix3d Geometry3D::GetRotationMatrixFromQuaternion(
+        const Eigen::Vector4d& rotation) {
+    return Eigen::Quaterniond(rotation(0), rotation(1), rotation(2),
+                              rotation(3))
+            .normalized()
+            .toRotationMatrix();
+}
+
 }  // namespace geometry
-}  // namespace hymson3d
+}  // namespace open3d

@@ -16,6 +16,7 @@ void tiff_to_pointcloud(const std::string& tiff_path) {
     for (int i = 0; i < tiff_image.rows; ++i) {
         const float* row_ptr =
                 tiff_image.ptr<float>(i);  // Get pointer to the row
+
         float y = i * 0.03;
         for (int j = 0; j < tiff_image.cols; ++j) {
             float x = j * 0.01;
@@ -26,8 +27,69 @@ void tiff_to_pointcloud(const std::string& tiff_path) {
         }
     }
 
-    utility::write_ply("test.ply", pcd);
+    utility::write_ply(tiff_path, pcd);
 }
+
+void tiff_to_pointcloud(const std::string& tiff_path,
+                        geometry::PointCloud::Ptr pointcloud) {
+    cv::Mat tiff_image;
+    if (!utility::read_tiff(tiff_path, tiff_image)) {
+        return;
+    }
+    std::vector<Eigen::Vector3d> pcd;
+    // Reserve memory to avoid reallocations
+    pcd.resize(tiff_image.rows * tiff_image.cols);
+// Use OpenMP
+#pragma omp parallel for
+    for (int i = 0; i < tiff_image.rows; ++i) {
+        const float* row_ptr =
+                tiff_image.ptr<float>(i);  // Get pointer to the row
+        float y = i * 0.03;
+        for (int j = 0; j < tiff_image.cols; ++j) {
+            float x = j * 0.01;
+            float z = row_ptr[j] * 0.001;
+            pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
+        }
+    }  // #pragma omp critical
+
+    pointcloud->points_ = pcd;
+}
+
+void to_pcl_pointcloud(geometry::PointCloud::Ptr src,
+                       pcl::PointCloud<pcl::PointXYZ>::Ptr dst) {
+    for (auto pt : src->points_) {
+        dst->push_back(pcl::PointXYZ(pt.x(), pt.y(), pt.z()));
+    }
+}
+
+void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>::Ptr src,
+                     geometry::PointCloud::Ptr dst) {
+    for (auto pt : src->points) {
+        dst->points_.emplace_back(Eigen::Vector3d(pt.x, pt.y, pt.z));
+    }
+}
+
+void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>::Ptr src,
+                     pcl::PointCloud<pcl::Normal>::Ptr src_normals,
+                     geometry::PointCloud::Ptr dst) {
+    for (int i = 0; i < src->size(); ++i) {
+        dst->points_.emplace_back(Eigen::Vector3d(
+                src->points[i].x, src->points[i].y, src->points[i].z));
+        dst->normals_.emplace_back(
+                Eigen::Vector3d(src_normals->points[i].normal_x,
+                                src_normals->points[i].normal_y,
+                                src_normals->points[i].normal_z));
+    }
+}
+
+void pcl_to_normals(pcl::PointCloud<pcl::Normal>::Ptr src,
+                    geometry::PointCloud::Ptr dst) {
+    for (auto pt : src->points) {
+        dst->normals_.emplace_back(
+                Eigen::Vector3d(pt.normal_x, pt.normal_y, pt.normal_z));
+    }
+}
+
 }  // namespace converter
 }  // namespace core
 }  // namespace hymson3d

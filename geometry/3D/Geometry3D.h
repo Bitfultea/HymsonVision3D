@@ -53,6 +53,43 @@ protected:
             const std::vector<Eigen::Vector3d>& points) const;
     Eigen::Vector3d ComputeCenter(
             const std::vector<Eigen::Vector3d>& points) const;
+    void ResizeAndPaintUniformColor(std::vector<Eigen::Vector3d>& colors,
+                                    const size_t size,
+                                    const Eigen::Vector3d& color) const;
+    void TransformPoints(const Eigen::Matrix4d& transformation,
+                         std::vector<Eigen::Vector3d>& points) const;
+
+    /// \brief Transforms the normals with the transformation matrix.
+    void TransformNormals(const Eigen::Matrix4d& transformation,
+                          std::vector<Eigen::Vector3d>& normals) const;
+
+    /// \brief Transforms all covariance matrices with the transformation.
+    void TransformCovariances(const Eigen::Matrix4d& transformation,
+                              std::vector<Eigen::Matrix3d>& covariances) const;
+
+    /// \brief Apply translation to the geometry coordinates.
+    void TranslatePoints(const Eigen::Vector3d& translation,
+                         std::vector<Eigen::Vector3d>& points,
+                         bool relative) const;
+
+    /// \brief Scale the coordinates of all points by the scaling factor \p
+    /// scale.
+    void ScalePoints(const double scale,
+                     std::vector<Eigen::Vector3d>& points,
+                     const Eigen::Vector3d& center) const;
+
+    /// \brief Rotate all points with the rotation matrix \p R.
+    void RotatePoints(const Eigen::Matrix3d& R,
+                      std::vector<Eigen::Vector3d>& points,
+                      const Eigen::Vector3d& center) const;
+
+    /// \brief Rotate all normals with the rotation matrix \p R.
+    void RotateNormals(const Eigen::Matrix3d& R,
+                       std::vector<Eigen::Vector3d>& normals) const;
+
+    /// \brief Rotate all covariance matrices with the rotation matrix \p R.
+    void RotateCovariances(const Eigen::Matrix3d& R,
+                           std::vector<Eigen::Matrix3d>& covariances) const;
 };
 
 }  // namespace geometry

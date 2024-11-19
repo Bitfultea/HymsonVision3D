@@ -7,8 +7,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -fsanitize=address") # use google sanitizer
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} ")
+endif()
 
-  endif()
+if(NOT WIN32)
+    set(CMAKE_CUDA_ARCHITECTURES "86") # rtx 3090
+    set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
+endif ()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
@@ -72,12 +76,11 @@ endif()
 # Unit test
 option(BUILD_UNIT_TESTS "Build Unit Tests" ON)
 if(BUILD_UNIT_TESTS)
-  add_subdirectory(unitTest) 
+  add_subdirectory(test) 
 endif()
 
-# Utility Library
 add_subdirectory(utility)
-
+add_subdirectory(thirdparty)
 add_subdirectory(core)
 
 # geometry

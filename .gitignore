@@ -1,4 +1,6 @@
 build/*
 setting.json
 .vscode/*
-thirdparty/*
+thirdparty/libtorch/*
+cmake-build-*
+.idea/
