@@ -16,7 +16,6 @@
 #include "KDTreeFlann.h"
 #include "Logging.h"
 #include "Parallel.h"
-#include "ProgressBar.h"
 #include "Qhull.h"
 #include "Random.h"
 #include "TriangleMesh.h"
@@ -574,8 +573,8 @@ PointCloud::RemoveRadiusOutliers(size_t nb_points,
     KDTreeFlann kdtree;
     kdtree.SetGeometry(*this);
     std::vector<bool> mask = std::vector<bool>(points_.size());
-    utility::OMPProgressBar progress_bar(
-            points_.size(), "Remove radius outliers: ", print_progress);
+    // utility::OMPProgressBar progress_bar(
+    //         points_.size(), "Remove radius outliers: ", print_progress);
 #pragma omp parallel for schedule(static) \
         num_threads(utility::EstimateMaxThreads())
     for (int i = 0; i < int(points_.size()); i++) {
@@ -584,7 +583,7 @@ PointCloud::RemoveRadiusOutliers(size_t nb_points,
         size_t nb_neighbors = kdtree.SearchRadius(points_[i], search_radius,
                                                   tmp_indices, dist);
         mask[i] = (nb_neighbors > nb_points);
-        ++progress_bar;
+        // ++progress_bar;
     }
     std::vector<size_t> indices;
     for (size_t i = 0; i < mask.size(); i++) {
@@ -613,8 +612,8 @@ PointCloud::RemoveStatisticalOutliers(size_t nb_neighbors,
     std::vector<double> avg_distances = std::vector<double>(points_.size());
     std::vector<size_t> indices;
     size_t valid_distances = 0;
-    utility::OMPProgressBar progress_bar(
-            points_.size(), "Remove statistical outliers: ", print_progress);
+    // utility::OMPProgressBar progress_bar(
+    //         points_.size(), "Remove statistical outliers: ", print_progress);
 
 #pragma omp parallel for reduction(+ : valid_distances) schedule(static) \
         num_threads(utility::EstimateMaxThreads())
@@ -630,7 +629,7 @@ PointCloud::RemoveStatisticalOutliers(size_t nb_neighbors,
             mean = std::accumulate(dist.begin(), dist.end(), 0.0) / dist.size();
         }
         avg_distances[i] = mean;
-        ++progress_bar;
+        // ++progress_bar;
     }
     if (valid_distances == 0) {
         return std::make_tuple(std::make_shared<PointCloud>(),

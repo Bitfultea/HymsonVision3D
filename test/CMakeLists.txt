@@ -15,6 +15,11 @@ add_executable(TorchTest2
 add_executable(ConvertTiff
   convert_tiff.cpp)
 
+add_executable(
+  CGAL_test
+  test_CGAL.cpp
+)
+
 enable_testing()
 
 add_executable(testGoogleTest

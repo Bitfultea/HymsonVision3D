@@ -5,9 +5,9 @@
 // SPDX-License-Identifier: MIT
 // ----------------------------------------------------------------------------
 
-#include "open3d/geometry/Image.h"
+#include "Image.h"
 
-#include "open3d/utility/Parallel.h"
+#include "Parallel.h"
 
 namespace {
 /// Isotropic 2D kernels are separable:

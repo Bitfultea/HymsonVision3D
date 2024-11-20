@@ -13,9 +13,11 @@ if(NOT WIN32)
     set(CMAKE_CUDA_ARCHITECTURES "86") # rtx 3090
     set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
 endif ()
+set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
+set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 
 # find the necessary packages 
 find_package(PythonInterp REQUIRED) # for libtorch depenency
@@ -27,6 +29,7 @@ find_package(Threads REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Torch REQUIRED)
 find_package(PCL REQUIRED)
+find_package(CGAL REQUIRED)
 
 
 include(FetchContent)
@@ -44,11 +47,12 @@ set(INCLUDE_DIRS
   ${PROJECT_SOURCE_DIR}/geometry
   ${PROJECT_SOURCE_DIR}/utility
   ${PROJECT_SOURCE_DIR}/core
-  # ${CMAKE_CURRENT_SOURCE_DIR}/
+  ${PROJECT_SOURCE_DIR}/thirdparty
 )
 
 include_directories(${INCLUDE_DIRS})
 include_directories(${gtest_SOURCE_DIR}/include )
+include_directories(${CGAL_INCLUDE_DIRS})
 
 # OS specific settings
 if(WIN32)
