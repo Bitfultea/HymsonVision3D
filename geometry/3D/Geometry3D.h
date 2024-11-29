@@ -39,12 +39,12 @@ public:
                                const Eigen::Vector3d& center) = 0;
     virtual Geometry3D& Rotate(const Eigen::Matrix3d& R);
 
-    virtual AxisAlignedBoundingBox GetAxisAlignedBoundingBox() const = 0;
+    //     virtual AxisAlignedBoundingBox GetAxisAlignedBoundingBox() const = 0;
 
-    virtual OrientedBoundingBox GetOrientedBoundingBox(
-            bool robust = false) const = 0;
-    virtual OrientedBoundingBox GetMinimalOrientedBoundingBox(
-            bool robust = false) const = 0;
+    //     virtual OrientedBoundingBox GetOrientedBoundingBox(
+    //             bool robust = false) const = 0;
+    //     virtual OrientedBoundingBox GetMinimalOrientedBoundingBox(
+    //             bool robust = false) const = 0;
 
 protected:
     Eigen::Vector3d ComputeMinBound(

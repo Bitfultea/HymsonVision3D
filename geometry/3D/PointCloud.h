@@ -1,8 +1,10 @@
+#pragma once
 #include <Eigen/Core>
 #include <memory>
 #include <tuple>
 #include <vector>
 
+#include "BoundingBox3D.h"
 #include "Geometry3D.h"
 
 namespace hymson3d {
@@ -27,11 +29,11 @@ public:
     Eigen::Vector3d GetCenter() const override;
 
     /*Not implemented*/
-    AxisAlignedBoundingBox GetAxisAlignedBoundingBox() const override;
-    OrientedBoundingBox GetOrientedBoundingBox(
-            bool robust = false) const override;
-    OrientedBoundingBox GetMinimalOrientedBoundingBox(
-            bool robust = false) const override;
+    // AxisAlignedBoundingBox GetAxisAlignedBoundingBox() const override;
+    // OrientedBoundingBox GetOrientedBoundingBox(
+    //         bool robust = false) const override;
+    // OrientedBoundingBox GetMinimalOrientedBoundingBox(
+    //         bool robust = false) const override;
     /*Not implemented*/
 
     PointCloud &Transform(const Eigen::Matrix4d &transformation) override;
@@ -112,6 +114,14 @@ public:
     std::vector<Eigen::Vector3d> colors_;
     /// Covariance Matrix for each point
     std::vector<Eigen::Matrix3d> covariances_;
+    /// Points Intensities
+    std::vector<float> intensities_;
+    /// Labels for each point
+    std::vector<int> labels_;
+
+    // for tiff conversion
+    size_t width_;
+    size_t height_;
 };
 }  // namespace geometry
 }  // namespace hymson3d

@@ -16,6 +16,7 @@ endif ()
 set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
 set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 
@@ -30,6 +31,7 @@ find_package(CUDAToolkit REQUIRED)
 find_package(Torch REQUIRED)
 find_package(PCL REQUIRED)
 find_package(CGAL REQUIRED)
+find_package(nanoflann REQUIRED)
 
 
 include(FetchContent)

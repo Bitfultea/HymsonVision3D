@@ -3,7 +3,10 @@
 namespace hemson3d {
 namespace geometry {
 
-class BoundingBox3D : public open3d::geometry::AxisAlignedBoundingBox {};
+class AxisAlignedBoundingBox : public open3d::geometry::AxisAlignedBoundingBox {
+};
+
+class OrientedBoundingBox : public open3d::geometry::OrientedBoundingBox {};
 
 }  // namespace geometry
 }  // namespace hemson3d

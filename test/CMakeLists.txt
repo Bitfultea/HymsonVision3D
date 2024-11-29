@@ -53,7 +53,9 @@ target_link_libraries(
 target_link_libraries(
   ConvertTiff
   core_lib
-)
+  geometry_3d_lib
+  utility_lib
+  )
 
 include(GoogleTest)
 gtest_discover_tests(testGoogleTest)

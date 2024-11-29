@@ -30,6 +30,7 @@ Eigen::Vector3d Geometry3D::ComputeMaxBound(
                 return a.array().max(b.array()).matrix();
             });
 }
+
 Eigen::Vector3d Geometry3D::ComputeCenter(
         const std::vector<Eigen::Vector3d>& points) const {
     Eigen::Vector3d center(0, 0, 0);
