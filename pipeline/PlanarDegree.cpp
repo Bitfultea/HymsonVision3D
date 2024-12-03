@@ -19,6 +19,7 @@ double PlanarDegree::compute_planar_degree(geometry::PointCloud& pointcloud) {
         if (dist < lower_dist) lower_dist = dist;
         if (dist > upper_dist) upper_dist = dist;
     }
+    // std::cout << "Plane coeff " << plane->coeff_ << std::endl;
     return upper_dist - lower_dist;
 }
 

@@ -45,6 +45,7 @@ target_link_libraries(
   core_lib
   geometry_3d_lib
   pipeline
+  core_lib
 )
 
 

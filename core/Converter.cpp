@@ -75,6 +75,7 @@ void mat_to_pointcloud(const cv::Mat& mat,
 
 void to_pcl_pointcloud(geometry::PointCloud& src,
                        pcl::PointCloud<pcl::PointXYZ>::Ptr dst) {
+    dst->reserve(src.points_.size());
     for (auto pt : src.points_) {
         dst->push_back(pcl::PointXYZ(pt.x(), pt.y(), pt.z()));
     }
@@ -82,6 +83,7 @@ void to_pcl_pointcloud(geometry::PointCloud& src,
 
 void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>& src,
                      geometry::PointCloud::Ptr dst) {
+    dst->points_.reserve(src.size());
     for (auto pt : src.points) {
         dst->points_.emplace_back(Eigen::Vector3d(pt.x, pt.y, pt.z));
     }

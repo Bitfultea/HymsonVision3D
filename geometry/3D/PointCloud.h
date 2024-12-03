@@ -9,6 +9,12 @@
 
 namespace hymson3d {
 namespace geometry {
+struct curvature {
+    double mean_curvature;
+    double gaussian_curvature;
+    double total_curvature;
+};
+
 class PointCloud : public Geometry3D {
 public:
     typedef std::shared_ptr<PointCloud> Ptr;
@@ -118,6 +124,8 @@ public:
     std::vector<float> intensities_;
     /// Labels for each point
     std::vector<int> labels_;
+    /// Curvature of each point
+    std::vector<curvature *> curvatures_;
 
     // for tiff conversion
     size_t width_;
