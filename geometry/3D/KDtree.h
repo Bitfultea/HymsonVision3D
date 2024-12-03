@@ -5,8 +5,8 @@
 #include <vector>
 
 #include "Feature.h"
-// #include "Geometry.h"
 #include "Geometry3D.h"
+#include "PointCloud.h"
 
 namespace nanoflann {
 
@@ -92,6 +92,12 @@ public:
     KDTree &operator=(const KDTree &) = delete;
 
 public:
+    bool SetData(PointCloud &data) {
+        SetRawData(Eigen::Map<const Eigen::MatrixXd>(
+                (const double *)((const PointCloud &)data).points_.data(), 3,
+                ((const PointCloud &)data).points_.size()));
+    }
+
     /// Sets the data for the KDTree from a matrix.
     /// \param data Data points for KDTree Construction.
     bool SetMatrixData(const Eigen::MatrixXd &data);

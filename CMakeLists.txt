@@ -17,8 +17,10 @@ set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
-set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
+
+message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 
 # find the necessary packages 
 find_package(PythonInterp REQUIRED) # for libtorch depenency
@@ -50,6 +52,7 @@ set(INCLUDE_DIRS
   ${PROJECT_SOURCE_DIR}/utility
   ${PROJECT_SOURCE_DIR}/core
   ${PROJECT_SOURCE_DIR}/thirdparty
+  ${PROJECT_SOURCE_DIR}/pipeline
 )
 
 include_directories(${INCLUDE_DIRS})
@@ -88,8 +91,7 @@ endif()
 add_subdirectory(utility)
 add_subdirectory(thirdparty)
 add_subdirectory(core)
-
-# geometry
 add_subdirectory(geometry)
+add_subdirectory(pipeline)
 
 

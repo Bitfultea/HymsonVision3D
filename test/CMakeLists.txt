@@ -20,6 +20,11 @@ add_executable(
   test_CGAL.cpp
 )
 
+add_executable(
+  planar_test
+  test_plane.cpp
+)
+
 enable_testing()
 
 add_executable(testGoogleTest
@@ -32,6 +37,14 @@ target_link_libraries(
   gmock
   gtest_main
   utility_lib
+)
+
+target_link_libraries(
+  planar_test
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
 )
 
 
@@ -55,6 +68,7 @@ target_link_libraries(
   core_lib
   geometry_3d_lib
   utility_lib
+  thirdparty_lib
   )
 
 include(GoogleTest)

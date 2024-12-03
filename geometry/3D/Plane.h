@@ -1,0 +1,31 @@
+#pragma once
+#include <Eigen/Core>
+#include <memory>
+#include <tuple>
+#include <vector>
+
+#include "Geometry3D.h"
+
+namespace hymson3d {
+namespace geometry {
+
+class Plane {
+public:
+    typedef std::shared_ptr<Plane> Ptr;
+    Plane() = default;
+    ~Plane() = default;
+
+public:
+    void compute_orthogonal_basis();
+
+public:
+    Eigen::Vector3d center_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d normal_ = Eigen::Vector3d::Zero();
+    std::vector<Eigen::Vector3d> inlier_points_;
+    std::vector<size_t> inlier_idx_;
+    Eigen::Matrix3d orth_basis = Eigen::Matrix3d::Zero();
+    Eigen::Vector4d coeff_ = Eigen::Vector4d::Zero();
+};
+
+}  // namespace geometry
+}  // namespace hymson3d
