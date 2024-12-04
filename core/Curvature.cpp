@@ -1,7 +1,9 @@
 #include "Curvature.h"
 
 #include <pcl/features/normal_3d.h>
+#include <pcl/features/normal_3d_omp.h>
 #include <pcl/features/principal_curvatures.h>
+// #include <pcl/features/principal_curvatures_omp.h>
 #include <pcl/point_types.h>
 
 #include <cmath>
@@ -32,13 +34,14 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
 
     if (!cloud.HasNormals()) {
         LOG_INFO("Estimate normal for curvature computation");
-        pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> normal_estimator;
+        pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> normal_estimator;
         normal_estimator.setInputCloud(cloud_pcl);
         normal_estimator.setSearchMethod(tree);
-        std::cout << static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(
-                             param)
-                             .radius_
-                  << std::endl;
+        // std::cout <<
+        // static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(
+        //                      param)
+        //                      .radius_
+        //           << std::endl;
         normal_estimator.setRadiusSearch(
                 static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(param)
                         .radius_);
@@ -90,6 +93,7 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
         cloud.curvatures_.emplace_back(curvature);
     }
 
+    std::cout << min_val << " " << max_val << std::endl;
     // color pointcloud according to curvature
     cloud.colors_.reserve(cloud.points_.size());
     for (int i = 0; i < cloud.curvatures_.size(); i++) {
@@ -107,6 +111,7 @@ Eigen::Vector3d color_with_curvature(double curvature,
                                      double max_val) {
     // std::cout << curvature << std::endl;
     double value = (curvature - min_val) / (max_val - min_val);
+    // value = 1 / (-log(value));
     double r = 1.0, g = 1.0, b = 1.0;
 
     if (value < 0.5) {
@@ -117,6 +122,8 @@ Eigen::Vector3d color_with_curvature(double curvature,
         r = 1.0;
         g = 1.0 - (value - 0.5) * 2.0;
         b = 1.0 - (value - 0.5) * 2.0;
+        // std::cout << "value: " << value << " r: " << r << " g: " << g
+        //           << " b: " << b << std::endl;
     }
 
     return Eigen::Vector3d(r, g, b);

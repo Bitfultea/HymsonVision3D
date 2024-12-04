@@ -1,6 +1,7 @@
 #include "Normal.h"
 
 #include <pcl/features/normal_3d.h>
+#include <pcl/features/normal_3d_omp.h>
 #include <pcl/point_types.h>
 
 #include "Converter.h"
@@ -21,7 +22,7 @@ void ComputeNormals_PCL(geometry::PointCloud& cloud,
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_pcl(
             new pcl::PointCloud<pcl::PointXYZ>);
     converter::to_pcl_pointcloud(cloud, cloud_pcl);
-    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> estimator;
+    pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> estimator;
     estimator.setInputCloud(cloud_pcl);
 
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(

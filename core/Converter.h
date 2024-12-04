@@ -17,12 +17,14 @@ void tiff_to_pointcloud(const std::string& tiff_path,
                         const std::string& ply_path,
                         const Eigen::Vector3d& ratio = Eigen::Vector3d(0.01,
                                                                        0.03,
-                                                                       0.001));
+                                                                       0.001),
+                        bool remove_bottom = false);
 void tiff_to_pointcloud(const std::string& tiff_path,
                         geometry::PointCloud::Ptr pointcloud,
                         const Eigen::Vector3d& ratio = Eigen::Vector3d(0.01,
                                                                        0.03,
-                                                                       0.001));
+                                                                       0.001),
+                        bool remove_bottom = false);
 
 void mat_to_pointcloud(const cv::Mat& mat,
                        geometry::PointCloud::Ptr pointcloud);
