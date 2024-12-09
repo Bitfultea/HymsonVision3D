@@ -1,7 +1,7 @@
 #pragma once
-
 #include <Eigen/Core>>
 #include <Eigen/Dense>
+#include <memory>
 
 namespace hymson3d {
 namespace core {
@@ -57,6 +57,7 @@ public:
 
     Eigen::Vector3d get_camera_up() { return camera_up_; }
     Eigen::Matrix4d get_extrinsic() { return extrinsic_; }
+    void set_extrinsic(Eigen::Matrix4d extrinsic) { extrinsic_ = extrinsic; }
 
 public:
     Eigen::Matrix4d projection_matrix;

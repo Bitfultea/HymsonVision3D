@@ -207,5 +207,24 @@ cv::Mat PointCloudRaster::simple_projection(
     return depthImage;
 }
 
+cv::Mat PointCloudRaster::simple_projection_x(
+        geometry::PointCloud::Ptr pointcloud) {
+    cv::Mat depthImage = cv::Mat::zeros(frame_height_, frame_width_, CV_32FC1);
+    Eigen::Vector3d min_bound = pointcloud->GetMinBound();
+    Eigen::Vector3d max_bound = pointcloud->GetMaxBound();
+    Eigen::Vector3d extent = max_bound - min_bound;
+
+#pragma omp parallel for
+    for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+        Eigen::Vector3d pt = pointcloud->points_[i] - min_bound;
+        int u = std::round(pt.y() / extent.y() * frame_width_);
+        int v = std::round(pt.z() / extent.z() * frame_height_);
+        if (u >= 0 && u < frame_width_ && v >= 0 && v < frame_height_) {
+            depthImage.at<float>(v, u) = pt.x();
+        }
+    }
+    return depthImage;
+}
+
 }  // namespace core
 }  // namespace hymson3d

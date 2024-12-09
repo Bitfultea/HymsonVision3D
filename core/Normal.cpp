@@ -3,6 +3,7 @@
 #include <pcl/features/normal_3d.h>
 #include <pcl/features/normal_3d_omp.h>
 #include <pcl/point_types.h>
+#include <pcl/search/organized.h>
 
 #include "Converter.h"
 #include "MathTool.h"
@@ -22,11 +23,26 @@ void ComputeNormals_PCL(geometry::PointCloud& cloud,
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_pcl(
             new pcl::PointCloud<pcl::PointXYZ>);
     converter::to_pcl_pointcloud(cloud, cloud_pcl);
-    pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> estimator;
-    estimator.setInputCloud(cloud_pcl);
 
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
-            new pcl::search::KdTree<pcl::PointXYZ>());
+    pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> estimator;
+
+    // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
+    //         new pcl::search::KdTree<pcl::PointXYZ>());
+
+    // Create a search tree, use KDTreee for non-organized data.
+    pcl::search::Search<pcl::PointXYZ>::Ptr tree;
+    std::cout << cloud_pcl->isOrganized() << std::endl;
+    std::cout << cloud_pcl->height << std::endl;
+    if (cloud_pcl->isOrganized()) {
+        tree.reset(new pcl::search::OrganizedNeighbor<pcl::PointXYZ>());
+    } else {
+        tree.reset(new pcl::search::KdTree<pcl::PointXYZ>(false));
+    }
+
+    estimator.setInputCloud(cloud_pcl);
+    estimator.setViewPoint(std::numeric_limits<float>::max(),
+                           std::numeric_limits<float>::max(),
+                           std::numeric_limits<float>::max());
     estimator.setSearchMethod(tree);
     pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(
             new pcl::PointCloud<pcl::Normal>);
@@ -76,9 +92,27 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
         // auto normal = ComputeNormal(covariances[i], fast_normal_computation);
         Eigen::Vector3d normal =
                 utility::mathtool::FastEigen3x3(covariances[i]).normalized();
-        // TODO:oritent the normal w.r.t
         // viewpoint/tangentplane/givendirection
         cloud.normals_[i] = normal;
+    }
+}
+
+// TODO:oritent the normal w.r.t
+void orient_normals_towards_positive_z(
+        geometry::PointCloud& cloud,
+        const Eigen::Vector3d& orientation_reference
+        /* = Eigen::Vector3d(0.0, 0.0, 1.0)*/) {
+    if (!cloud.HasNormals()) {
+        LOG_ERROR("No normals in the PointCloud. Can not orient normals");
+    }
+#pragma omp parallel for
+    for (int i = 0; i < (int)cloud.points_.size(); i++) {
+        auto& normal = cloud.normals_[i];
+        if (normal.norm() == 0.0) {
+            normal = orientation_reference;
+        } else if (normal.dot(orientation_reference) < 0.0) {
+            normal *= -1.0;  // flip the normal
+        }
     }
 }
 

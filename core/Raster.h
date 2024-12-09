@@ -25,6 +25,7 @@ public:
     cv::Mat project_to_frame(geometry::PointCloud::Ptr pointcloud,
                              Mode mode = Mode::AVE);
     cv::Mat simple_projection(geometry::PointCloud::Ptr pointcloud);
+    cv::Mat simple_projection_x(geometry::PointCloud::Ptr pointcloud);
 
 private:
     void cal_ortho_proj_intrinsics(geometry::PointCloud::Ptr pointcloud);

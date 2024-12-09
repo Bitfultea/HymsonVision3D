@@ -29,6 +29,16 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
     converter::to_pcl_pointcloud(cloud, cloud_pcl);
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
             new pcl::search::KdTree<pcl::PointXYZ>());
+
+    // pcl::search::Search<pcl::PointXYZ>::Ptr tree;
+    // // std::cout << cloud_pcl->isOrganized() << std::endl;
+    // // std::cout << cloud_pcl->height << std::endl;
+    // if (cloud_pcl->isOrganized()) {
+    //     tree.reset(new pcl::search::OrganizedNeighbor<pcl::PointXYZ>());
+    // } else {
+    //     tree.reset(new pcl::search::KdTree<pcl::PointXYZ>(false));
+    // }
+
     pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(
             new pcl::PointCloud<pcl::Normal>);
 
@@ -37,6 +47,8 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
         pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> normal_estimator;
         normal_estimator.setInputCloud(cloud_pcl);
         normal_estimator.setSearchMethod(tree);
+        // normal_estimator.setViewPoint(0.0, 0.0, 100.0);
+        normal_estimator.setViewPoint(0, 0, std::numeric_limits<float>::max());
         // std::cout <<
         // static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(
         //                      param)
@@ -46,7 +58,9 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
                 static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(param)
                         .radius_);
         normal_estimator.compute(*cloud_normals);
-        std::cout << (*cloud_normals)[0] << std::endl;
+        converter::pcl_to_hymson3d_normals(cloud_normals, cloud);
+        LOG_INFO("Complete normal estimation");
+        // std::cout << (*cloud_normals)[0] << std::endl;
     } else {
         cloud_normals->reserve(cloud.normals_.size());
         for (auto pt : cloud.normals_) {
@@ -93,7 +107,7 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
         cloud.curvatures_.emplace_back(curvature);
     }
 
-    std::cout << min_val << " " << max_val << std::endl;
+    // std::cout << min_val << " " << max_val << std::endl;
     // color pointcloud according to curvature
     cloud.colors_.reserve(cloud.points_.size());
     for (int i = 0; i < cloud.curvatures_.size(); i++) {

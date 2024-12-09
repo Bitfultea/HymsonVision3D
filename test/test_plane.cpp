@@ -18,9 +18,13 @@ int main(int argc, char **argv) {
     LOG_INFO("Degree: {}", degree);
 
     // test curvature
+
     geometry::KDTreeSearchParamRadius param(0.2);
     core::feature::ComputeCurvature_PCL(*pointcloud, param);
     utility::write_ply("test_curvature.ply", pointcloud,
                        utility::FileFormat::BINARY);
+
+    // test histogram
+
     return 0;
 }

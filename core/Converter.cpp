@@ -39,6 +39,7 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     if (!utility::read_tiff(tiff_path, tiff_image)) {
         return;
     }
+    // FIXME: Add support for more data type
     std::vector<Eigen::Vector3d> pcd;
     // Reserve memory to avoid reallocations
     pcd.resize(tiff_image.rows * tiff_image.cols);
@@ -120,6 +121,8 @@ void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>& src,
 void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>::Ptr src,
                      pcl::PointCloud<pcl::Normal>::Ptr src_normals,
                      geometry::PointCloud& dst) {
+    dst.points_.reserve(src->size());
+    dst.normals_.reserve(src_normals->size());
     for (int i = 0; i < src->size(); ++i) {
         dst.points_.emplace_back(Eigen::Vector3d(
                 src->points[i].x, src->points[i].y, src->points[i].z));
@@ -132,6 +135,7 @@ void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>::Ptr src,
 
 void pcl_to_hymson3d_normals(pcl::PointCloud<pcl::Normal>::Ptr src,
                              geometry::PointCloud& dst) {
+    dst.normals_.reserve(src->size());
     for (auto pt : src->points) {
         dst.normals_.emplace_back(
                 Eigen::Vector3d(pt.normal_x, pt.normal_y, pt.normal_z));
