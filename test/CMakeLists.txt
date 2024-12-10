@@ -25,6 +25,11 @@ add_executable(
   test_plane.cpp
 )
 
+add_executable(
+  calib_test
+  test_calib.cpp
+)
+
 enable_testing()
 
 add_executable(testGoogleTest
@@ -47,6 +52,15 @@ target_link_libraries(
   pipeline
   core_lib
 )
+
+target_link_libraries(
+  calib_test
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
+)
+
 
 
 target_link_libraries(

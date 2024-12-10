@@ -8,10 +8,8 @@ namespace core {
 
 class CameraCalib {
 public:
-    CameraCalib(bool debug_mode, int win_size /*winSize is used to control the side length of the search window. */) {
-        m_debug_mode = debug_mode;
-    }
-    virtual ~CameraCalib() {}
+    CameraCalib(bool debug_mode) { m_debug_mode = debug_mode; }
+    ~CameraCalib() = default;
 
 public:
     enum Pattern {
@@ -22,10 +20,17 @@ public:
         ASYMMETRIC_CIRCLES_GRID
     };
     typedef std::shared_ptr<CameraCalib> Ptr;
-    bool init(std::string img_dir);
+    bool init(std::string config_file);
     bool process();
     double cal_reprojection_errors();
     void cal_camera_extersics();
+    void undistort_image(std::string config_file,
+                         cv::Mat& distorted_img,
+                         cv::Mat& undistorted_img);
+    void undistort_image(cv::Mat& distorted_img, cv::Mat& undistorted_img);
+    std::vector<std::string> get_img_list() { return m_img_list; }
+    cv::Mat get_camera_matrix() { return m_camera_matrix; }
+    cv::Mat get_dist_coeffs() { return m_dist_coeffs; }
 
 private:
     void read_calib_param();
@@ -40,6 +45,7 @@ public:
     std::string m_calib_file;
     Pattern m_pattern;
     bool m_debug_mode;
+    /*winSize is used to control the side length of the search window. */
     int m_win_size;
     std::vector<cv::Mat> RTvecs;
 

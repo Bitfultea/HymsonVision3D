@@ -11,4 +11,5 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(core_lib 
     utility_lib
     ${PCL_LIBRARIES}
+    geometry_3d_lib
     )

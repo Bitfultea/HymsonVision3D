@@ -10,4 +10,5 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # Link libraries
 target_link_libraries(pipeline 
     utility_lib
+    core_lib
     )

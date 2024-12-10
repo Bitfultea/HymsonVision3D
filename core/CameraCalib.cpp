@@ -8,14 +8,44 @@
 namespace hymson3d {
 namespace core {
 
-bool CameraCalib::init(std::string img_dir) {
-    m_calib_img_dir = img_dir;
-    return utility::filesystem::ListFilesInDirectory(img_dir, m_img_list);
+bool CameraCalib::init(std::string config_file) {
+    m_calib_file = config_file;
+    read_calib_param();
+    return utility::filesystem::ListFilesInDirectory(m_calib_img_dir,
+                                                     m_img_list);
+}
+
+bool CameraCalib::process() {
+    detect_corner();
+    compute_3d_points();
+    calibrate_camera();
+    write_calib_param();
+    cal_reprojection_errors();
+    return true;
+}
+
+void CameraCalib::undistort_image(std::string config_file,
+                                  cv::Mat& distorted_img,
+                                  cv::Mat& undistorted_img) {
+    m_calib_file = config_file;
+    read_calib_param();
+    cv::undistort(distorted_img, undistorted_img, m_camera_matrix,
+                  m_dist_coeffs);
+}
+
+void CameraCalib::undistort_image(cv::Mat& distorted_img,
+                                  cv::Mat& undistorted_img) {
+    cv::undistort(distorted_img, undistorted_img, m_camera_matrix,
+                  m_dist_coeffs);
 }
 
 void CameraCalib::write_calib_param() {
     cv::FileStorage fs(m_calib_file, cv::FileStorage::WRITE);
     fs << "calib_image_dir" << m_calib_img_dir;
+    fs << "calib_pattern" << m_pattern;
+    fs << "win_size" << m_win_size;
+    fs << "board_size" << m_boardsize;
+    fs << "marker_size" << marker_size;
     fs << "calib_param";
     fs << "{" << "distortion" << m_dist_coeffs;
     fs << "intrinsic" << m_camera_matrix << "}";
@@ -23,22 +53,35 @@ void CameraCalib::write_calib_param() {
 }
 
 void CameraCalib::read_calib_param() {
+    LOG_INFO("Start reading calib param from {}", m_calib_file);
     cv::FileStorage fs;
     fs.open(m_calib_file, cv::FileStorage::READ);
     fs["calib_image_dir"] >> m_calib_img_dir;
     fs["calib_pattern"] >> m_pattern;
+    fs["win_size"] >> m_win_size;
+    fs["board_size"] >> m_boardsize;
+    fs["marker_size"] >> marker_size;
     cv::FileNode param = fs["calib_param"];
     param["distortion"] >> m_dist_coeffs;
     param["intrinsic"] >> m_camera_matrix;
     fs.release();
+
+    LOG_INFO("Check for read content:");
+    LOG_INFO("calib image dir = {}", m_calib_img_dir);
+    LOG_INFO("calib pattern = {}", m_pattern);
+    LOG_INFO("board size = {},{}", m_boardsize.width, m_boardsize.height);
+    LOG_INFO("marker size = {}", marker_size);
 }
 
 void CameraCalib::detect_corner() {
     valid_img_num = 0;
+    LOG_DEBUG("-----------Detect Corner----------");
     for (auto img_path : m_img_list) {
         cv::Mat img = cv::imread(img_path);
         cv::Mat image_gray;
-        cvtColor(img, image_gray, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(img, image_gray, cv::COLOR_BGR2GRAY);
+        // binary
+        cv::threshold(image_gray, image_gray, 100, 255, cv::THRESH_BINARY);
         std::vector<cv::Point2f> corners;
         // print debug info
         if (valid_img_num == 0) {
@@ -54,17 +97,19 @@ void CameraCalib::detect_corner() {
         bool found;
         switch (m_pattern) {
             case CHESSBOARD:
-                found = findChessboardCorners(image_gray, m_boardsize, corners);
+                found = cv::findChessboardCorners(image_gray, m_boardsize,
+                                                  corners);
                 break;
             case CHARUCOBOARD:
                 LOG_WARN("CHARUCOBOARD pattern not supported yet.");
                 break;
             case CIRCLES_GRID:
-                found = findCirclesGrid(image_gray, m_boardsize, corners);
+                found = cv::findCirclesGrid(image_gray, m_boardsize, corners,
+                                            cv::CALIB_CB_SYMMETRIC_GRID);
                 break;
             case ASYMMETRIC_CIRCLES_GRID:
-                found = findCirclesGrid(image_gray, m_boardsize, corners,
-                                        cv::CALIB_CB_ASYMMETRIC_GRID);
+                found = cv::findCirclesGrid(image_gray, m_boardsize, corners,
+                                            cv::CALIB_CB_ASYMMETRIC_GRID);
                 break;
             default:
                 found = false;
@@ -78,13 +123,25 @@ void CameraCalib::detect_corner() {
                              cv::Size(m_win_size, m_win_size), cv::Size(-1, -1),
                              criteria);
             m_point2d_all_images.emplace_back(corners);
+            valid_img_num++;
         } else {
-            LOG_WARN("Corners not found in {}", img_path);
+            LOG_WARN(
+                    "Corners not found in {}. Found {} corners, but it should "
+                    "have {} corners.",
+                    img_path, corners.size(), m_boardsize.area());
         }
         if (m_debug_mode) {
-            drawChessboardCorners(img, m_boardsize, cv::Mat(corners), found);
+            cv::drawChessboardCorners(img, m_boardsize, cv::Mat(corners),
+                                      found);
+            std::string img_name =
+                    img_path.substr(img_path.find_last_of("/") + 1);
+            utility::filesystem::MakeDirectory("./debug_calib");
+            std::string debug_img_path =
+                    "./debug_calib/" + img_name + "_detected.jpg";
+            cv::imwrite(debug_img_path, img);
+            // cv::imwrite("./debug_calib/" + img_name + "_gray.jpg",
+            // image_gray);
         }
-        valid_img_num++;
     }
 }
 

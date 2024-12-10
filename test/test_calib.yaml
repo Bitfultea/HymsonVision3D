@@ -1,0 +1,21 @@
+%YAML:1.0
+---
+calib_image_dir: /home/charles/Data/Dataset/Collected/Calib/calib
+calib_pattern: 3
+win_size: 3
+board_size: [ 7, 7 ]
+marker_size: 5.
+calib_param:
+   distortion: !!opencv-matrix
+      rows: 5
+      cols: 1
+      dt: d
+      data: [ -3.7082927125470189e+00, 1.2356460897644212e+02,
+          -8.3068418902933917e-03, -3.4148427087761827e-03,
+          6.3526601778270117e+02 ]
+   intrinsic: !!opencv-matrix
+      rows: 3
+      cols: 3
+      dt: d
+      data: [ 2.9457165392744196e+03, 0., 2.7789968995139833e+02, 0.,
+          2.9445260140381538e+03, 2.6771727587479904e+02, 0., 0., 1. ]
