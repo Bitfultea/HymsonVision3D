@@ -70,6 +70,13 @@ public:
     bool HasCovariances() const {
         return !points_.empty() && covariances_.size() == points_.size();
     }
+    bool HasIntensities() const {
+        return points_.size() > 0 && intensities_.size() == points_.size();
+    }
+
+    bool HasLabels() const { return labels_.size() == points_.size(); }
+
+    bool HasCurvatures() const { return curvatures_.size() == points_.size(); }
 
     /// Normalize point normals to length 1.
     PointCloud &NormalizeNormals() {
