@@ -7,6 +7,9 @@ namespace feature {
 void ComputeCurvature_PCL(geometry::PointCloud& cloud,
                           geometry::KDTreeSearchParam& param);
 
+void ComputeSurfaceVariation(geometry::PointCloud& cloud,
+                             geometry::KDTreeSearchParam& param);
+
 // TODO:: implement fast curvature computation
 void ComputeCurvature(geometry::PointCloud& cloud,
                       geometry::KDTreeSearchParam& param);

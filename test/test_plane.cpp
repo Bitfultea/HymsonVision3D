@@ -2,6 +2,7 @@
 #include "Curvature.h"
 #include "FileTool.h"
 #include "Logger.h"
+#include "Normal.h"
 #include "PlanarDegree.h"
 
 using namespace hymson3d;
@@ -20,8 +21,16 @@ int main(int argc, char **argv) {
     // test curvature
 
     geometry::KDTreeSearchParamRadius param(0.2);
-    core::feature::ComputeCurvature_PCL(*pointcloud, param);
-    utility::write_ply("test_curvature.ply", pointcloud,
+    core::feature::ComputeNormals_PCA(*pointcloud, param);
+    std::cout << "Normals computed" << std::endl;
+    std::cout << "Has normals: " << pointcloud->HasNormals() << std::endl;
+    std::cout << "Has covariances: " << pointcloud->HasCovariances()
+              << std::endl;
+    std::cout << pointcloud->covariances_.size() << std::endl;
+    std::cout << pointcloud->points_.size() << std::endl;
+    //     core::feature::ComputeCurvature_PCL(*pointcloud, param);
+    core::feature::ComputeSurfaceVariation(*pointcloud, param);
+    utility::write_ply("test_curvature_2.ply", pointcloud,
                        utility::FileFormat::BINARY);
 
     // test histogram

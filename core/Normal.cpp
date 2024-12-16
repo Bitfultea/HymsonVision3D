@@ -83,10 +83,10 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
                 covariances[i] = Eigen::Matrix3d::Identity();
             }
         }
-
     } else {
         covariances = cloud.covariances_;
     }
+
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < (int)covariances.size(); i++) {
         // auto normal = ComputeNormal(covariances[i], fast_normal_computation);
@@ -94,6 +94,7 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
                 utility::mathtool::FastEigen3x3(covariances[i]).normalized();
         // viewpoint/tangentplane/givendirection
         cloud.normals_[i] = normal;
+        cloud.covariances_[i] = covariances[i];
     }
 }
 

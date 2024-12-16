@@ -151,7 +151,7 @@ Eigen::Vector3d FastEigen3x3(const Eigen::Matrix3d &covariance) {
 
         if (half_det >= 0) {
             evec2 = ComputeEigenvector0(A, eval(2));
-            if (eval(2) < eval(0) && eval(2) < eval(1)) {
+            if (eval(2) < (0) && eval(2) < eval(1)) {
                 A *= max_coeff;
                 return evec2;
             }

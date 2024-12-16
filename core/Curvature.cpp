@@ -10,6 +10,7 @@
 
 #include "3D/PointCloud.h"
 #include "Converter.h"
+#include "MathTool.h"
 #include "Normal.h"
 
 namespace hymson3d {
@@ -119,6 +120,85 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
 }
 
 // TODO::implement https://arxiv.org/pdf/2305.12653
+
+// TODO::test this method and compare with pcl implementation
+void ComputeSurfaceVariation(geometry::PointCloud& cloud,
+                             geometry::KDTreeSearchParam& param) {
+    std::cout << "gg" << std::endl;
+
+    if (!cloud.HasCurvatures()) {
+        cloud.curvatures_.resize(cloud.points_.size());
+    } else {
+        LOG_DEBUG("Curvatures already exist. Overwrite");
+    }
+
+    std::vector<Eigen::Matrix3d> covariances;
+    if (!cloud.HasCovariances()) {
+        const auto& points = cloud.points_;
+        std::vector<Eigen::Matrix3d> covariances;
+        covariances.resize(points.size());
+        hymson3d::geometry::KDTree kdtree;
+        kdtree.SetData(cloud);
+        std::cout << "not covariance 2" << std::endl;
+
+// use knn for testing
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < (int)points.size(); i++) {
+            std::vector<int> indices;
+            std::vector<double> distance2;
+            std::cout << "0" << std::endl;
+
+            if (kdtree.Search(points[i], param, indices, distance2) >= 3) {
+                auto covariance = utility::ComputeCovariance(points, indices);
+                if (cloud.HasCovariances() && covariance.isIdentity(1e-4)) {
+                    covariances[i] = cloud.covariances_[i];
+                } else {
+                    covariances[i] = covariance;
+                }
+            } else {
+                covariances[i] = Eigen::Matrix3d::Identity();
+            }
+        }
+
+    } else {
+        covariances = cloud.covariances_;
+    }
+    std::cout << "0" << std::endl;
+
+    double min_val = std::numeric_limits<double>::max();
+    double max_val = std::numeric_limits<double>::min();
+
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < (int)covariances.size(); i++) {
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver;
+        solver.compute(covariances[i]);
+        Eigen::VectorXd eigenvalues = solver.eigenvalues();
+        std::sort(eigenvalues.begin(), eigenvalues.end());
+        // NOTE:
+        // https://pointclouds.org/documentation/group__features.html
+        // https://graphics.stanford.edu/~mapauly/Pdfs/Simplification.pdf
+        // curvature 和 surface variation 不是一个东西
+        std::cout << "1" << std::endl;
+        cloud.curvatures_[i]->total_curvature =
+                eigenvalues[0] /
+                (eigenvalues[0] + eigenvalues[1] + eigenvalues[2]);
+        if (cloud.curvatures_[i]->total_curvature < min_val)
+            min_val = cloud.curvatures_[i]->total_curvature;
+        if (cloud.curvatures_[i]->total_curvature > max_val)
+            max_val = cloud.curvatures_[i]->total_curvature;
+
+        // fake data
+        cloud.curvatures_[i]->mean_curvature = eigenvalues[0];
+        cloud.curvatures_[i]->gaussian_curvature =
+                eigenvalues[0] * eigenvalues[1];
+    }
+
+    cloud.colors_.reserve(cloud.points_.size());
+    for (int i = 0; i < cloud.curvatures_.size(); i++) {
+        cloud.colors_.emplace_back(color_with_curvature(
+                cloud.curvatures_[i]->total_curvature, min_val, max_val));
+    }
+}
 
 Eigen::Vector3d color_with_curvature(double curvature,
                                      double min_val,
