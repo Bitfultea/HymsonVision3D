@@ -143,7 +143,6 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
         for (int i = 0; i < (int)points.size(); i++) {
             std::vector<int> indices;
             std::vector<double> distance2;
-            std::cout << "0" << std::endl;
 
             if (kdtree.Search(points[i], param, indices, distance2) >= 3) {
                 auto covariance = utility::ComputeCovariance(points, indices);
@@ -165,6 +164,8 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
     double min_val = std::numeric_limits<double>::max();
     double max_val = std::numeric_limits<double>::min();
     double surface_variation;
+    std::vector<geometry::curvature> surface_variations;
+    surface_variations.resize(covariances.size());
 
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < (int)covariances.size(); i++) {
@@ -183,8 +184,7 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
         // fake data
         writen_data.mean_curvature = eigenvalues[0];
         writen_data.gaussian_curvature = eigenvalues[0] * eigenvalues[1];
-
-        cloud.curvatures_[i] = &writen_data;
+        surface_variations[i] = writen_data;
 
         if (surface_variation < min_val) min_val = surface_variation;
         if (surface_variation > max_val) max_val = surface_variation;
@@ -192,9 +192,9 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
 
     cloud.colors_.resize(cloud.points_.size());
 #pragma omp parallel for
-    for (int i = 0; i < cloud.curvatures_.size(); i++) {
+    for (int i = 0; i < surface_variations.size(); i++) {
         cloud.colors_[i] = color_with_curvature(
-                cloud.curvatures_[i]->total_curvature, min_val, max_val);
+                surface_variations[i].total_curvature, min_val, max_val);
     }
 }
 
