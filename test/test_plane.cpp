@@ -32,9 +32,9 @@ int main(int argc, char **argv) {
               << std::endl;
     std::cout << pointcloud->covariances_.size() << std::endl;
     //     core::feature::ComputeCurvature_PCL(*pointcloud, param);
-    //     core::feature::ComputeSurfaceVariation(*pointcloud, param);
-    //     utility::write_ply("test_curvature_2.ply", pointcloud,
-    //                        utility::FileFormat::BINARY);
+    core::feature::ComputeSurfaceVariation(*pointcloud, param);
+    utility::write_ply("test_curvature_2.ply", pointcloud,
+                       utility::FileFormat::BINARY);
 
     // test histogram
 

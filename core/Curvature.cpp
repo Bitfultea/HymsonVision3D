@@ -124,8 +124,6 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
 // TODO::test this method and compare with pcl implementation
 void ComputeSurfaceVariation(geometry::PointCloud& cloud,
                              geometry::KDTreeSearchParam& param) {
-    std::cout << "gg" << std::endl;
-
     if (!cloud.HasCurvatures()) {
         cloud.curvatures_.resize(cloud.points_.size());
     } else {
@@ -135,7 +133,6 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
     std::vector<Eigen::Matrix3d> covariances;
     if (!cloud.HasCovariances()) {
         const auto& points = cloud.points_;
-        std::vector<Eigen::Matrix3d> covariances;
         covariances.resize(points.size());
         hymson3d::geometry::KDTree kdtree;
         kdtree.SetData(cloud);
@@ -161,12 +158,13 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
         }
 
     } else {
+        std::cout << "use previous covariance" << std::endl;
         covariances = cloud.covariances_;
     }
-    std::cout << "0" << std::endl;
 
     double min_val = std::numeric_limits<double>::max();
     double max_val = std::numeric_limits<double>::min();
+    double surface_variation;
 
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < (int)covariances.size(); i++) {
@@ -178,32 +176,25 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
         // https://pointclouds.org/documentation/group__features.html
         // https://graphics.stanford.edu/~mapauly/Pdfs/Simplification.pdf
         // curvature 和 surface variation 不是一个东西
-        std::cout << "1" << std::endl;
-        cloud.curvatures_[i]->total_curvature =
-                eigenvalues[0] /
-                (eigenvalues[0] + eigenvalues[1] + eigenvalues[2]);
-        if (cloud.curvatures_[i]->total_curvature < min_val)
-            min_val = cloud.curvatures_[i]->total_curvature;
-        if (cloud.curvatures_[i]->total_curvature > max_val)
-            max_val = cloud.curvatures_[i]->total_curvature;
-
+        surface_variation = eigenvalues[0] /
+                            (eigenvalues[0] + eigenvalues[1] + eigenvalues[2]);
+        geometry::curvature writen_data;
+        writen_data.total_curvature = surface_variation;
         // fake data
-        cloud.curvatures_[i]->mean_curvature = eigenvalues[0];
-        cloud.curvatures_[i]->gaussian_curvature =
-                eigenvalues[0] * eigenvalues[1];
+        writen_data.mean_curvature = eigenvalues[0];
+        writen_data.gaussian_curvature = eigenvalues[0] * eigenvalues[1];
+
+        cloud.curvatures_[i] = &writen_data;
+
+        if (surface_variation < min_val) min_val = surface_variation;
+        if (surface_variation > max_val) max_val = surface_variation;
     }
 
-    if (!cloud.HasColors()) {
-        cloud.colors_.reserve(cloud.points_.size());
-        for (int i = 0; i < cloud.curvatures_.size(); i++) {
-            cloud.colors_.emplace_back(color_with_curvature(
-                    cloud.curvatures_[i]->total_curvature, min_val, max_val));
-        }
-    } else {
-        for (int i = 0; i < cloud.curvatures_.size(); i++) {
-            cloud.colors_[i] = color_with_curvature(
-                    cloud.curvatures_[i]->total_curvature, min_val, max_val);
-        }
+    cloud.colors_.resize(cloud.points_.size());
+#pragma omp parallel for
+    for (int i = 0; i < cloud.curvatures_.size(); i++) {
+        cloud.colors_[i] = color_with_curvature(
+                cloud.curvatures_[i]->total_curvature, min_val, max_val);
     }
 }
 
