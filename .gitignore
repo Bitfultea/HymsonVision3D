@@ -1,6 +1,8 @@
 build/*
+build_debug/*
 setting.json
 .vscode/*
 thirdparty/libtorch/*
 cmake-build-*
 .idea/
+*.ply

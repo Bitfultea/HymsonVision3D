@@ -19,19 +19,22 @@ int main(int argc, char **argv) {
     LOG_INFO("Degree: {}", degree);
 
     // test curvature
-
+    std::cout << "Has normals: " << pointcloud->HasNormals() << std::endl;
+    std::cout << "Has covariances: " << pointcloud->HasCovariances()
+              << std::endl;
+    std::cout << "Has points: " << pointcloud->points_.size() << std::endl;
     geometry::KDTreeSearchParamRadius param(0.2);
     core::feature::ComputeNormals_PCA(*pointcloud, param);
     std::cout << "Normals computed" << std::endl;
+
     std::cout << "Has normals: " << pointcloud->HasNormals() << std::endl;
     std::cout << "Has covariances: " << pointcloud->HasCovariances()
               << std::endl;
     std::cout << pointcloud->covariances_.size() << std::endl;
-    std::cout << pointcloud->points_.size() << std::endl;
     //     core::feature::ComputeCurvature_PCL(*pointcloud, param);
-    core::feature::ComputeSurfaceVariation(*pointcloud, param);
-    utility::write_ply("test_curvature_2.ply", pointcloud,
-                       utility::FileFormat::BINARY);
+    //     core::feature::ComputeSurfaceVariation(*pointcloud, param);
+    //     utility::write_ply("test_curvature_2.ply", pointcloud,
+    //                        utility::FileFormat::BINARY);
 
     // test histogram
 

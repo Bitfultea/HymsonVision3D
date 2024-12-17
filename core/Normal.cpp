@@ -56,15 +56,12 @@ void ComputeNormals_PCL(geometry::PointCloud& cloud,
 
 void ComputeNormals_PCA(geometry::PointCloud& cloud,
                         geometry::KDTreeSearchParam& param) {
-    if (!cloud.HasNormals()) {
-        cloud.normals_.resize(cloud.points_.size());
-    }
     std::vector<Eigen::Matrix3d> covariances;
-    if (!cloud.HasCovariances()) {
+    const bool has_covariance = cloud.HasCovariances();
+    cloud.covariances_.resize(cloud.points_.size());
+    if (!has_covariance) {
         const auto& points = cloud.points_;
-        std::vector<Eigen::Matrix3d> covariances;
         covariances.resize(points.size());
-
         hymson3d::geometry::KDTree kdtree;
         kdtree.SetData(cloud);
 
@@ -74,7 +71,7 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
             std::vector<double> distance2;
             if (kdtree.Search(points[i], param, indices, distance2) >= 3) {
                 auto covariance = utility::ComputeCovariance(points, indices);
-                if (cloud.HasCovariances() && covariance.isIdentity(1e-4)) {
+                if (has_covariance && covariance.isIdentity(1e-4)) {
                     covariances[i] = cloud.covariances_[i];
                 } else {
                     covariances[i] = covariance;
@@ -87,9 +84,13 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
         covariances = cloud.covariances_;
     }
 
+    bool has_normals = cloud.HasNormals();
+    if (!has_normals) {
+        cloud.normals_.resize(cloud.points_.size());
+    }
+
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < (int)covariances.size(); i++) {
-        // auto normal = ComputeNormal(covariances[i], fast_normal_computation);
         Eigen::Vector3d normal =
                 utility::mathtool::FastEigen3x3(covariances[i]).normalized();
         // viewpoint/tangentplane/givendirection

@@ -93,11 +93,9 @@ public:
 
 public:
     bool SetData(PointCloud &data) {
-        std::cout << "start" << std::endl;
-        SetRawData(Eigen::Map<const Eigen::MatrixXd>(
+        return SetRawData(Eigen::Map<const Eigen::MatrixXd>(
                 (const double *)((const PointCloud &)data).points_.data(), 3,
                 ((const PointCloud &)data).points_.size()));
-        std::cout << "end" << std::endl;
     }
 
     /// Sets the data for the KDTree from a matrix.

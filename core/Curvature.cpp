@@ -193,10 +193,17 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
                 eigenvalues[0] * eigenvalues[1];
     }
 
-    cloud.colors_.reserve(cloud.points_.size());
-    for (int i = 0; i < cloud.curvatures_.size(); i++) {
-        cloud.colors_.emplace_back(color_with_curvature(
-                cloud.curvatures_[i]->total_curvature, min_val, max_val));
+    if (!cloud.HasColors()) {
+        cloud.colors_.reserve(cloud.points_.size());
+        for (int i = 0; i < cloud.curvatures_.size(); i++) {
+            cloud.colors_.emplace_back(color_with_curvature(
+                    cloud.curvatures_[i]->total_curvature, min_val, max_val));
+        }
+    } else {
+        for (int i = 0; i < cloud.curvatures_.size(); i++) {
+            cloud.colors_[i] = color_with_curvature(
+                    cloud.curvatures_[i]->total_curvature, min_val, max_val);
+        }
     }
 }
 
