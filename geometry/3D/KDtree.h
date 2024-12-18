@@ -92,7 +92,7 @@ public:
     KDTree &operator=(const KDTree &) = delete;
 
 public:
-    bool SetData(PointCloud &data) {
+    bool SetData(const PointCloud &data) {
         return SetRawData(Eigen::Map<const Eigen::MatrixXd>(
                 (const double *)((const PointCloud &)data).points_.data(), 3,
                 ((const PointCloud &)data).points_.size()));

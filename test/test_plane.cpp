@@ -25,6 +25,7 @@ int main(int argc, char **argv) {
     std::cout << "Has points: " << pointcloud->points_.size() << std::endl;
     geometry::KDTreeSearchParamRadius param(0.2);
     core::feature::ComputeNormals_PCA(*pointcloud, param);
+    core::feature::orient_normals_towards_positive_z(*pointcloud);
     std::cout << "Normals computed" << std::endl;
 
     std::cout << "Has normals: " << pointcloud->HasNormals() << std::endl;
@@ -32,10 +33,14 @@ int main(int argc, char **argv) {
               << std::endl;
     std::cout << pointcloud->covariances_.size() << std::endl;
     //     core::feature::ComputeCurvature_PCL(*pointcloud, param);
-    core::feature::ComputeSurfaceVariation(*pointcloud, param);
-    utility::write_ply("test_curvature_2.ply", pointcloud,
-                       utility::FileFormat::BINARY);
+    //     core::feature::ComputeSurfaceVariation(*pointcloud, param);
+    //     utility::write_ply("test_curvature_2.ply", pointcloud,
+    //                        utility::FileFormat::BINARY);
 
+    geometry::KDTreeSearchParamKNN param_knn(20);
+    core::feature::ComputeCurvature_TNV(*pointcloud, param_knn);
+    utility::write_ply("test_curvature_3.ply", pointcloud,
+                       utility::FileFormat::BINARY);
     // test histogram
 
     return 0;

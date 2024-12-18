@@ -25,6 +25,8 @@ void ComputeNormals_JET(geometry::PointCloud& cloud,
 // TODO::Implement this function
 void ComputerNormals_VCM(geometry::PointCloud& cloud);
 
+void orient_normals_towards_positive_z(geometry::PointCloud& cloud);
+
 }  // namespace feature
 }  // namespace core
 }  // namespace hymson3d

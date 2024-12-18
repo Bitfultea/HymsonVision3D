@@ -70,6 +70,7 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
             std::vector<int> indices;
             std::vector<double> distance2;
             if (kdtree.Search(points[i], param, indices, distance2) >= 3) {
+                // std::cout << indices.size() << std::endl;
                 auto covariance = utility::ComputeCovariance(points, indices);
                 if (has_covariance && covariance.isIdentity(1e-4)) {
                     covariances[i] = cloud.covariances_[i];
@@ -100,10 +101,9 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
 }
 
 // TODO:oritent the normal w.r.t
-void orient_normals_towards_positive_z(
-        geometry::PointCloud& cloud,
-        const Eigen::Vector3d& orientation_reference
-        /* = Eigen::Vector3d(0.0, 0.0, 1.0)*/) {
+void orient_normals_towards_positive_z(geometry::PointCloud& cloud) {
+    const Eigen::Vector3d orientation_reference =
+            Eigen::Vector3d(0.0, 0.0, 1.0);
     if (!cloud.HasNormals()) {
         LOG_ERROR("No normals in the PointCloud. Can not orient normals");
     }
