@@ -117,6 +117,7 @@ public:
 
     std::shared_ptr<PointCloud> Crop(const OrientedBoundingBox &bbox,
                                      bool invert = false) const;
+    // Eigen::Vector3d GenerateRandomColor() const;
 
 public:
     /// Points coordinates.

@@ -9,6 +9,9 @@ namespace feature {
 void ComputeCurvature_PCL(geometry::PointCloud& cloud,
                           geometry::KDTreeSearchParam& param);
 
+void ComputeCurvature_PCA(geometry::PointCloud& cloud,
+                          geometry::KDTreeSearchParam& param);
+
 void ComputeSurfaceVariation(geometry::PointCloud& cloud,
                              geometry::KDTreeSearchParam& param);
 
@@ -20,6 +23,11 @@ void ComputeCurvature_TNV(geometry::PointCloud& cloud,
 Eigen::Vector3d color_with_curvature(double curvature,
                                      double min_val,
                                      double max_val);
+
+std::pair<double, double> calculate_point_curvature(geometry::PointCloud& cloud,
+                                                    Eigen::Vector3d normal,
+                                                    Eigen::Vector3d pt,
+                                                    std::vector<int> indices);
 
 Eigen::SparseMatrix<double> CotangentLaplacian(const Eigen::MatrixXd& V,
                                                const Eigen::MatrixXi& F);

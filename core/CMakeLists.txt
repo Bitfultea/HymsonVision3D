@@ -10,7 +10,7 @@ endif()
 add_library(core_lib SHARED ${core_source})
 
 # Include headers in build process
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${PCL_INCLUDE_DIRS})
 
 if(UNIX)
     # Link libraries

@@ -32,6 +32,11 @@ void mat_to_pointcloud(const cv::Mat& mat,
 // convert hymson3d point cloud data to pcl point cloud
 void to_pcl_pointcloud(geometry::PointCloud& src,
                        pcl::PointCloud<pcl::PointXYZ>::Ptr dst);
+
+void to_pcl_pointcloud(geometry::PointCloud& src,
+                       pcl::PointCloud<pcl::PointXYZ>::Ptr dst,
+                       pcl::PointCloud<pcl::Normal>::Ptr dst_normals);
+
 void to_cgal_pointset(geometry::PointCloud& src);
 void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>::Ptr src,
                      geometry::PointCloud& dst);

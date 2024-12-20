@@ -1,15 +1,15 @@
 #include "Curvature.h"
 
-#include <pcl/features/normal_3d.h>
-#include <pcl/features/normal_3d_omp.h>
-#include <pcl/features/principal_curvatures.h>
-// #include <pcl/features/principal_curvatures_omp.h>
 #include <CGAL/Delaunay_triangulation_2.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Gmpq.h>
 #include <CGAL/Projection_traits_xy_3.h>
 #include <CGAL/Triangulation_vertex_base_with_info_2.h>
 #include <omp.h>
+#include <pcl/features/feature.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/features/normal_3d_omp.h>
+#include <pcl/features/principal_curvatures.h>
 #include <pcl/point_types.h>
 
 #include <Eigen/Dense>
@@ -51,15 +51,6 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
             new pcl::search::KdTree<pcl::PointXYZ>());
 
-    // pcl::search::Search<pcl::PointXYZ>::Ptr tree;
-    // // std::cout << cloud_pcl->isOrganized() << std::endl;
-    // // std::cout << cloud_pcl->height << std::endl;
-    // if (cloud_pcl->isOrganized()) {
-    //     tree.reset(new pcl::search::OrganizedNeighbor<pcl::PointXYZ>());
-    // } else {
-    //     tree.reset(new pcl::search::KdTree<pcl::PointXYZ>(false));
-    // }
-
     pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(
             new pcl::PointCloud<pcl::Normal>);
 
@@ -68,13 +59,6 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
         pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> normal_estimator;
         normal_estimator.setInputCloud(cloud_pcl);
         normal_estimator.setSearchMethod(tree);
-        // normal_estimator.setViewPoint(0.0, 0.0, 100.0);
-        normal_estimator.setViewPoint(0, 0, std::numeric_limits<float>::max());
-        // std::cout <<
-        // static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(
-        //                      param)
-        //                      .radius_
-        //           << std::endl;
         normal_estimator.setRadiusSearch(
                 static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(param)
                         .radius_);
@@ -97,22 +81,35 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
     curvature_estimator.setInputCloud(cloud_pcl);
     curvature_estimator.setInputNormals(cloud_normals);
     curvature_estimator.setSearchMethod(tree);
-    curvature_estimator.setRadiusSearch(
+    double rad =
             static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(param)
-                    .radius_);
+                    .radius_;
+    curvature_estimator.setRadiusSearch(rad);
+    // curvature_estimator.setNumberOfThreads(10);// available in pcl 1.14.1-dev
     curvature_estimator.compute(*cloud_curvatures);
 
-    // std::cout << cloud_curvatures->size() << " vs: " << cloud.points_.size()
-    //           << std::endl;
-    cloud.curvatures_.reserve(cloud_curvatures->size());
+    //     cloud_curvatures->resize(cloud_pcl->size());
+    // #pragma omp parallel for
+    //     for (size_t i = 0; i < cloud_pcl->size(); ++i) {
+    //         std::vector<int> indices;
+    //         std::vector<float> distances;
+    //         // 搜索邻域点
+    //         tree->radiusSearch(cloud_pcl->points[i], 0.02, indices,
+    //         distances);
 
+    //         float pcx, pcy, pcz, pc1, pc2;
+
+    //         // 计算主曲率
+    //         curvature_estimator.computePointPrincipalCurvatures(
+    //                 *cloud_normals, static_cast<int>(i), indices, pcx, pcy,
+    //                 pcz, pc1, pc2);
+    //     }
+
+    cloud.curvatures_.reserve(cloud_curvatures->size());
     double min_val = std::numeric_limits<double>::max();
     double max_val = std::numeric_limits<double>::min();
 
     for (int i = 0; i < cloud_curvatures->size(); i++) {
-        // std::cout << (*cloud_curvatures)[i].pc1 << "  "
-        //           << (*cloud_curvatures)[i].pc2 << std::endl;
-
         geometry::curvature* curvature = new geometry::curvature();
         curvature->mean_curvature =
                 ((*cloud_curvatures)[i].pc1 + (*cloud_curvatures)[i].pc2) / 2;
@@ -249,6 +246,111 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
         cloud.colors_[i] = color_with_curvature(
                 surface_variations[i].total_curvature, min_val, max_val);
     }
+}
+
+void ComputeCurvature_PCA(geometry::PointCloud& cloud,
+                          geometry::KDTreeSearchParam& param) {
+    if (!cloud.HasCurvatures()) {
+        cloud.curvatures_.resize(cloud.points_.size());
+    } else {
+        LOG_DEBUG("Curvatures already exist. Overwrite");
+    }
+
+    if (!cloud.HasNormals()) {
+        LOG_DEBUG("PointCloud Has not normals");
+    } else {
+        ComputeNormals_PCA(cloud, param);
+    }
+
+    double min_val = std::numeric_limits<double>::max();
+    double max_val = std::numeric_limits<double>::min();
+    double k1, k2;
+
+    hymson3d::geometry::KDTree kdtree;
+    kdtree.SetData(cloud);
+    cloud.curvatures_.resize(cloud.points_.size());
+
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < (int)cloud.points_.size(); i++) {
+        std::vector<int> indices;
+        std::vector<double> distance2;
+
+        if (kdtree.Search(cloud.points_[i], param, indices, distance2) >= 3) {
+            auto res = calculate_point_curvature(cloud, cloud.normals_[i],
+                                                 cloud.points_[i], indices);
+            k1 = res.first;
+            k2 = res.second;
+            geometry::curvature* writen_data = new geometry::curvature();
+            writen_data->total_curvature = pow(k1, 2) + pow(k2, 2);
+
+            // fake data
+            writen_data->mean_curvature = (k1 + k2) / 2.0;
+            writen_data->gaussian_curvature = k1 * k2;
+            cloud.curvatures_[i] = writen_data;
+
+            if (writen_data->total_curvature < min_val)
+                min_val = writen_data->total_curvature;
+            if (writen_data->total_curvature > max_val)
+                max_val = writen_data->total_curvature;
+        }
+    }
+
+    cloud.colors_.resize(cloud.points_.size());
+#pragma omp parallel for
+    for (int i = 0; i < cloud.curvatures_.size(); i++) {
+        cloud.colors_[i] = color_with_curvature(
+                cloud.curvatures_[i]->total_curvature, min_val, max_val);
+    }
+}
+
+// implemtation based on pcl document
+std::pair<double, double> calculate_point_curvature(geometry::PointCloud& cloud,
+                                                    Eigen::Vector3d normal,
+                                                    Eigen::Vector3d pt,
+                                                    std::vector<int> indices) {
+    Eigen::Vector3d mean;
+    Eigen::Matrix3d covariance;
+    Eigen::Matrix<double, 9, 1> cumulants;
+    cumulants.setZero();
+    for (const auto& idx : indices) {
+        // project tangent point
+        Eigen::Vector3d n = normal.normalized();
+        double d = (cloud.points_[idx] - pt).dot(n);
+        Eigen::Vector3d tangent_point = pt - d * n;
+
+        // cal covariance matrix
+        cumulants(0) += tangent_point(0);
+        cumulants(1) += tangent_point(1);
+        cumulants(2) += tangent_point(2);
+        cumulants(3) += tangent_point(0) * tangent_point(0);
+        cumulants(4) += tangent_point(0) * tangent_point(1);
+        cumulants(5) += tangent_point(0) * tangent_point(2);
+        cumulants(6) += tangent_point(1) * tangent_point(1);
+        cumulants(7) += tangent_point(1) * tangent_point(2);
+        cumulants(8) += tangent_point(2) * tangent_point(2);
+    }
+    cumulants /= (double)indices.size();
+    mean(0) = cumulants(0);
+    mean(1) = cumulants(1);
+    mean(2) = cumulants(2);
+    covariance(0, 0) = cumulants(3) - cumulants(0) * cumulants(0);
+    covariance(1, 1) = cumulants(6) - cumulants(1) * cumulants(1);
+    covariance(2, 2) = cumulants(8) - cumulants(2) * cumulants(2);
+    covariance(0, 1) = cumulants(4) - cumulants(0) * cumulants(1);
+    covariance(1, 0) = covariance(0, 1);
+    covariance(0, 2) = cumulants(5) - cumulants(0) * cumulants(2);
+    covariance(2, 0) = covariance(0, 2);
+    covariance(1, 2) = cumulants(7) - cumulants(1) * cumulants(2);
+    covariance(2, 1) = covariance(1, 2);
+
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver;
+    solver.compute(covariance);
+    Eigen::VectorXd eigenvalues = solver.eigenvalues();
+    std::sort(eigenvalues.begin(), eigenvalues.end());
+
+    double k1 = eigenvalues[0];
+    double k2 = eigenvalues[2];
+    return std::make_pair(k1, k2);
 }
 
 Eigen::Vector3d color_with_curvature(double curvature,

@@ -110,6 +110,19 @@ void to_pcl_pointcloud(geometry::PointCloud& src,
     }
 }
 
+void to_pcl_pointcloud(geometry::PointCloud& src,
+                       pcl::PointCloud<pcl::PointXYZ>::Ptr dst,
+                       pcl::PointCloud<pcl::Normal>::Ptr dst_normals) {
+    dst->reserve(src.points_.size());
+    dst_normals->reserve(src.points_.size());
+    for (int i = 0; i < src.points_.size(); ++i) {
+        dst->push_back(pcl::PointXYZ(src.points_[i].x(), src.points_[i].y(),
+                                     src.points_[i].z()));
+        dst_normals->emplace_back(pcl::Normal(
+                src.normals_[i].x(), src.normals_[i].y(), src.normals_[i].z()));
+    }
+}
+
 void pcl_to_hymson3d(pcl::PointCloud<pcl::PointXYZ>& src,
                      geometry::PointCloud::Ptr dst) {
     dst->points_.reserve(src.size());
