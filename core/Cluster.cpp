@@ -1,6 +1,6 @@
 
 #include "Cluster.h"
-
+#define PCL_MULTITHREADING 4
 #include <pcl/features/normal_3d.h>
 #include <pcl/features/normal_3d_omp.h>
 #include <pcl/filters/filter_indices.h>
@@ -41,7 +41,6 @@ void Cluster::RegionGrowing_PCL(geometry::PointCloud& cloud,
         LOG_DEBUG("Already have normals. Use previsous computed normals");
         converter::to_pcl_pointcloud(cloud, pcl_cloud, normals);
     }
-
     pcl::IndicesPtr indices(new std::vector<int>);
     pcl::removeNaNFromPointCloud(*pcl_cloud, *indices);
 

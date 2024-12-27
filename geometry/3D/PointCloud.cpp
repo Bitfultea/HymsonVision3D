@@ -22,18 +22,19 @@ Eigen::Vector3d PointCloud::GetMaxBound() const {
 
 Eigen::Vector3d PointCloud::GetCenter() const { return ComputeCenter(points_); }
 
-// AxisAlignedBoundingBox PointCloud::GetAxisAlignedBoundingBox() const {
-//     return AxisAlignedBoundingBox::CreateFromPoints(points_);
-// }
+AABB PointCloud::GetAxisAlignedBoundingBox() const {
+    return open3d::geometry::AxisAlignedBoundingBox::CreateFromPoints(points_);
+}
 
-// OrientedBoundingBox PointCloud::GetOrientedBoundingBox(bool robust) const {
-//     return OrientedBoundingBox::CreateFromPoints(points_, robust);
-// }
+OBB PointCloud::GetOrientedBoundingBox(bool robust) const {
+    return open3d::geometry::OrientedBoundingBox::CreateFromPoints(points_,
+                                                                   robust);
+}
 
-// OrientedBoundingBox PointCloud::GetMinimalOrientedBoundingBox(
-//         bool robust) const {
-//     return OrientedBoundingBox::CreateFromPointsMinimal(points_, robust);
-// }
+OBB PointCloud::GetMinimalOrientedBoundingBox(bool robust) const {
+    return open3d::geometry::OrientedBoundingBox::CreateFromPointsMinimal(
+            points_, robust);
+}
 
 PointCloud &PointCloud::Transform(const Eigen::Matrix4d &transformation) {
     TransformPoints(transformation, points_);

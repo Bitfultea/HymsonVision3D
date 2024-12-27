@@ -1,5 +1,7 @@
 #include "DefectDetection.h"
 
+#include <pcl/console/print.h>
+
 #include "Cluster.h"
 #include "Converter.h"
 #include "Curvature.h"
@@ -40,8 +42,11 @@ void DefectDetection::detect_defects(
     auto filter_res = filter.StatisticalOutliers(points, 250, 2.0);
     points = std::get<0>(filter_res);
     LOG_INFO("Denoise: {} After denoised.", points->points_.size());
-    utility::write_ply("test_curvature_1.ply", points,
-                       utility::FileFormat::BINARY);
+
+    if (debug_mode) {
+        utility::write_ply("test_curvature_1.ply", points,
+                           utility::FileFormat::BINARY);
+    }
 
     // 1.2 normal estimation
     core::feature::ComputeNormals_PCA(*points, param);
@@ -63,8 +68,10 @@ void DefectDetection::detect_defects(
                     points->normals_[i]);
         }
     }
-    utility::write_ply("test_curvature_2.ply", points,
-                       utility::FileFormat::BINARY);
+    if (debug_mode) {
+        utility::write_ply("test_curvature_2.ply", points,
+                           utility::FileFormat::BINARY);
+    }
 
     // 2.0 separate r-corner and the flip-edge
     std::vector<geometry::PointCloud::Ptr> long_clouds;
@@ -119,8 +126,10 @@ void DefectDetection::detect_defects(
         cloud->PaintUniformColor(Eigen::Vector3d(0.0, 1.0, 0.0));
         (*total_cloud) += *cloud;
     }
-    utility::write_ply("test_curvature_3.ply", total_cloud,
-                       utility::FileFormat::BINARY);
+    if (debug_mode) {
+        utility::write_ply("test_curvature_3.ply", total_cloud,
+                           utility::FileFormat::BINARY);
+    }
 
     // 2.1 region growing on long clouds
     size_t max_cluster_size = 2000000;
@@ -151,9 +160,10 @@ void DefectDetection::detect_defects(
     for (auto cloud : long_clouds) {
         (*total_cloud) += *cloud;
     }
-
-    utility::write_ply("test_curvature_4.ply", total_cloud,
-                       utility::FileFormat::BINARY);
+    if (debug_mode) {
+        utility::write_ply("test_curvature_4.ply", total_cloud,
+                           utility::FileFormat::BINARY);
+    }
 
     // 3.0 extract defects
     geometry::PointCloud::Ptr defects =
@@ -166,15 +176,19 @@ void DefectDetection::detect_defects(
             }
         }
     }
-    utility::write_ply("test_curvature_5.ply", defects,
-                       utility::FileFormat::BINARY);
+    if (debug_mode) {
+        utility::write_ply("test_curvature_5.ply", defects,
+                           utility::FileFormat::BINARY);
+    }
 
     // 3.1 defects clusters
     int num_defects =
             core::Cluster::DBSCANCluster(*defects, radius, min_points);
     std::vector<geometry::PointCloud::Ptr> defect_clouds(num_defects);
-    utility::write_ply("test_curvature_6.ply", defects,
-                       utility::FileFormat::BINARY);
+    if (debug_mode) {
+        utility::write_ply("test_curvature_6.ply", defects,
+                           utility::FileFormat::BINARY);
+    }
 
     for (auto& pcd : defect_clouds) {
         pcd = std::make_shared<geometry::PointCloud>();

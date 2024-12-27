@@ -31,6 +31,7 @@ find_package(OpenCV REQUIRED)
 find_package(Threads REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Torch REQUIRED)
+find_package(Qhull REQUIRED) #v8.0.2
 find_package(PCL REQUIRED)
 find_package(CGAL REQUIRED)
 find_package(nanoflann REQUIRED)

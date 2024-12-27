@@ -34,13 +34,9 @@ public:
     Eigen::Vector3d GetMaxBound() const override;
     Eigen::Vector3d GetCenter() const override;
 
-    /*Not implemented*/
-    // AxisAlignedBoundingBox GetAxisAlignedBoundingBox() const override;
-    // OrientedBoundingBox GetOrientedBoundingBox(
-    //         bool robust = false) const override;
-    // OrientedBoundingBox GetMinimalOrientedBoundingBox(
-    //         bool robust = false) const override;
-    /*Not implemented*/
+    AABB GetAxisAlignedBoundingBox() const;
+    OBB GetOrientedBoundingBox(bool robust = false) const;
+    OBB GetMinimalOrientedBoundingBox(bool robust = false) const;
 
     PointCloud &Transform(const Eigen::Matrix4d &transformation) override;
     PointCloud &Translate(const Eigen::Vector3d &translation,
