@@ -92,26 +92,6 @@ public:
         return *this;
     }
 
-    std::shared_ptr<PointCloud> SelectByIndex(
-            const std::vector<size_t> &indices, bool invert = false) const;
-
-    std::shared_ptr<PointCloud> VoxelDownSample(double voxel_size) const;
-
-    std::tuple<std::shared_ptr<PointCloud>,
-               Eigen::MatrixXi,
-               std::vector<std::vector<int>>>
-    VoxelDownSampleAndTrace(double voxel_size,
-                            const Eigen::Vector3d &min_bound,
-                            const Eigen::Vector3d &max_bound,
-                            bool approximate_class = false) const;
-
-    std::shared_ptr<PointCloud> UniformDownSample(size_t every_k_points) const;
-
-    std::shared_ptr<PointCloud> RandomDownSample(double sampling_ratio) const;
-
-    std::shared_ptr<PointCloud> FarthestPointDownSample(
-            size_t num_samples) const;
-
     std::shared_ptr<PointCloud> Crop(const AxisAlignedBoundingBox &bbox,
                                      bool invert = false) const;
 

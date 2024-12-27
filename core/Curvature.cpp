@@ -350,6 +350,7 @@ std::pair<double, double> calculate_point_curvature(geometry::PointCloud& cloud,
 
     double k1 = eigenvalues[0];
     double k2 = eigenvalues[2];
+
     return std::make_pair(k1, k2);
 }
 
@@ -369,8 +370,6 @@ Eigen::Vector3d color_with_curvature(double curvature,
         r = 1.0;
         g = 1.0 - (value - 0.5) * 2.0;
         b = 1.0 - (value - 0.5) * 2.0;
-        // std::cout << "value: " << value << " r: " << r << " g: " << g
-        //           << " b: " << b << std::endl;
     }
 
     return Eigen::Vector3d(r, g, b);

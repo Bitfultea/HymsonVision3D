@@ -147,6 +147,8 @@ private:
     std::unordered_map<int, int> classes;
 };
 
+enum Axis { Axi_X, Axi_Y, Axi_Z };
+
 class Filter {
 public:
     Filter() = default;
@@ -165,6 +167,10 @@ public:
     PointCloud::Ptr IndexDownSample(PointCloud::Ptr point_cloud,
                                     const std::vector<size_t> &indices,
                                     bool invert = false);
+
+    PointCloud::Ptr AxiFilter(PointCloud::Ptr point_cloud,
+                              std::pair<double, double> range,
+                              Axis axis);
 
     std::tuple<PointCloud::Ptr, std::vector<size_t>> RadiusOutliers(
             PointCloud::Ptr pointcloud, size_t nb_points, double search_radius);

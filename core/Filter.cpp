@@ -141,6 +141,7 @@ std::tuple<PointCloud::Ptr, std::vector<size_t>> Filter::StatisticalOutliers(
         return std::make_tuple(std::make_shared<PointCloud>(),
                                std::vector<size_t>());
     }
+
     KDTree kdtree;
     kdtree.SetData(*pointcloud);
     std::vector<double> avg_distances =
@@ -215,6 +216,38 @@ std::tuple<PointCloud::Ptr, std::vector<size_t>> Filter::RadiusOutliers(
         }
     }
     return std::make_tuple(IndexDownSample(pointcloud, indices), indices);
+}
+
+PointCloud::Ptr Filter::AxiFilter(PointCloud::Ptr point_cloud,
+                                  std::pair<double, double> range,
+                                  Axis axis) {
+    std::shared_ptr<PointCloud> output = std::make_shared<PointCloud>();
+    switch (axis) {
+        case Axi_X:
+            for (auto &point : point_cloud->points_) {
+                if (point.x() >= range.first && point.x() <= range.second) {
+                    output->points_.emplace_back(point);
+                }
+            }
+            break;
+        case Axi_Y:
+            for (auto &point : point_cloud->points_) {
+                if (point.y() >= range.first && point.y() <= range.second) {
+                    output->points_.emplace_back(point);
+                }
+            }
+            break;
+        case Axi_Z:
+            for (auto &point : point_cloud->points_) {
+                if (point.z() >= range.first && point.z() <= range.second) {
+                    output->points_.emplace_back(point);
+                }
+            }
+            break;
+        default:
+            break;
+    }
+    return output;
 }
 
 }  // namespace core

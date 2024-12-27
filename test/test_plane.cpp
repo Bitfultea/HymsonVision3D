@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
               << std::endl;
     std::cout << pointcloud->covariances_.size() << std::endl;
     //     core::feature::ComputeCurvature_PCL(*pointcloud, param);
-    core::feature::ComputeCurvature_PCA(*pointcloud, param);
+    //     core::feature::ComputeCurvature_PCA(*pointcloud, param);
 
     auto t3 = std::chrono::high_resolution_clock::now();
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2);
@@ -57,10 +57,10 @@ int main(int argc, char **argv) {
     //                        utility::FileFormat::BINARY);
 
     // test region growing
-    //     size_t max_cluster_size = 2000000;
-    //     size_t min_cluster_size = 100;
-    //     core::Cluster::RegionGrowing_PCL(*pointcloud, min_cluster_size,
-    //                                      max_cluster_size, 100);
+    size_t max_cluster_size = 2000000;
+    size_t min_cluster_size = 100;
+    core::Cluster::RegionGrowing_PCL(*pointcloud, 1.0, 0.05, min_cluster_size,
+                                     max_cluster_size, 100);
     utility::write_ply("test_curvature_3.ply", pointcloud,
                        utility::FileFormat::BINARY);
     return 0;

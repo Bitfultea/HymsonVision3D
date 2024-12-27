@@ -26,6 +26,11 @@ add_executable(
 )
 
 add_executable(
+  def_test
+  test_defect.cpp
+)
+
+add_executable(
   calib_test
   test_calib.cpp
 )
@@ -61,6 +66,14 @@ target_link_libraries(
   pipeline
 )
 
+target_link_libraries(
+  def_test
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
+  core_lib
+)
 
 
 target_link_libraries(
