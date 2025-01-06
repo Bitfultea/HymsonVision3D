@@ -20,6 +20,8 @@ Eigen::Vector3d PointCloud::GetMaxBound() const {
     return ComputeMaxBound(points_);
 }
 
+// Eigen::Vector3d PointCloud::GetExtend() {}
+
 Eigen::Vector3d PointCloud::GetCenter() const { return ComputeCenter(points_); }
 
 AABB PointCloud::GetAxisAlignedBoundingBox() const {

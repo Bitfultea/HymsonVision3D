@@ -31,6 +31,7 @@ public:
     PointCloud &Clear() override;
     bool IsEmpty() const override;
     Eigen::Vector3d GetMinBound() const override;
+    Eigen::Vector3d GetExtend() const;
     Eigen::Vector3d GetMaxBound() const override;
     Eigen::Vector3d GetCenter() const override;
 
@@ -110,6 +111,13 @@ public:
     std::vector<int> labels_;
     /// Curvature of each point
     std::vector<curvature *> curvatures_;
+    // y_slices
+    std::vector<std::vector<Eigen::Vector2d>> y_slices_;
+    std::vector<std::vector<Eigen::Vector3d>> ny_slices_;
+    std::vector<std::vector<size_t>> y_slice_idxs;
+    std::vector<std::vector<Eigen::Vector2d>> x_slices_;
+    std::vector<std::vector<Eigen::Vector3d>> nx_slices_;
+    std::vector<std::vector<size_t>> x_slice_idxs;
 
     // for tiff conversion
     size_t width_;
