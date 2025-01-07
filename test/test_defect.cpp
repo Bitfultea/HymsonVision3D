@@ -23,8 +23,8 @@ int main(int argc, char **argv) {
     float height_threshold = atof(argv[2]);
     float radius = atof(argv[3]);
     size_t min_points = (size_t)atoi(argv[4]);
-    float long_normal_degree = 1.3;
-    float long_curvature_threshold = 0.5;
+    float long_normal_degree = 1;
+    float long_curvature_threshold = 0.003;
     float rcorner_normal_degree = 1.0;
     float rcorner_curvature_threshold = 0.05;
     geometry::KDTreeSearchParamRadius param(0.2);
@@ -35,6 +35,12 @@ int main(int argc, char **argv) {
     //             rcorner_curvature_threshold, height_threshold, radius,
     //             min_points);
 
-    pipeline::DefectDetection::detect_pinholes(
-            pointcloud, param, height_threshold, radius, min_points);
+    //     pipeline::DefectDetection::detect_pinholes(
+    //             pointcloud, param, height_threshold, radius, min_points);
+
+    core::Cluster::RegionGrowingCluster(*pointcloud, radius, long_normal_degree,
+                                        long_curvature_threshold, min_points);
+    utility::write_ply("gg.ply", pointcloud, utility::FileFormat::BINARY);
+
+    return 0;
 }

@@ -20,6 +20,12 @@ public:
                              double eps,
                              size_t min_points);
 
+    static void RegionGrowingCluster(geometry::PointCloud& cloud,
+                                     float radius,
+                                     float normal_degree,
+                                     float curvature_threshold,
+                                     int min_cluster_size);
+
 private:
     static Eigen::Vector3d GenerateRandomColor() {
         std::random_device rd;
