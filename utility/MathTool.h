@@ -1,4 +1,7 @@
+#include <tuple>
+
 #include "Eigen.h"
+
 namespace hymson3d {
 namespace utility {
 namespace mathtool {
@@ -9,7 +12,8 @@ Eigen::Vector3d ComputeEigenvector1(const Eigen::Matrix3d &A,
                                     const Eigen::Vector3d &evec0,
                                     double eval1);
 
-Eigen::Vector3d FastEigen3x3(const Eigen::Matrix3d &covariance);
+std::tuple<Eigen::Vector3d, std::vector<double>> FastEigen3x3(
+        const Eigen::Matrix3d &covariance);
 
 template <typename T>
 T GetMedian(std::vector<T> buffer) {

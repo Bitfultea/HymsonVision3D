@@ -155,7 +155,7 @@ void Cluster::RegionGrowingCluster(geometry::PointCloud& cloud,
     kdtree.SetData(cloud);
     // compute normals
     if (!cloud.HasNormals()) {
-        geometry::KDTreeSearchParamRadius param(0.2);
+        geometry::KDTreeSearchParamRadius param(radius);
         feature::ComputeNormals_PCA(cloud, param);
         feature::orient_normals_towards_positive_z(cloud);
     }
@@ -203,7 +203,8 @@ void Cluster::RegionGrowingCluster(geometry::PointCloud& cloud,
 
             std::vector<int> neighbors;
             std::vector<double> dists2;
-            kdtree.SearchRadius(cloud.points_[current], 0.1, neighbors, dists2);
+            kdtree.SearchRadius(cloud.points_[current], radius, neighbors,
+                                dists2);
             for (int neighbor : neighbors) {
                 if (visited.find(neighbor) != visited.end()) continue;
 
@@ -220,9 +221,16 @@ void Cluster::RegionGrowingCluster(geometry::PointCloud& cloud,
                 // check the curvature
                 if (std::abs(cloud.curvatures_[neighbor]->total_curvature -
                              cloud.curvatures_[current]->total_curvature) >
-                    curvature_threshold)
+                            curvature_threshold ||
+                    std::abs(cloud.intensities_[neighbor] -
+                             cloud.intensities_[current]) > 100)
                     continue;
 
+                // // check the intensity
+                // if (std::abs(cloud.intensities_[neighbor] -
+                //              cloud.intensities_[current]) > 50) {
+                //     continue;
+                // }
                 // check the distance(not necessary)
                 // if (dists2[neighbor] > 0.1 * 0.1) continue;
 

@@ -90,13 +90,32 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
         cloud.normals_.resize(cloud.points_.size());
     }
 
-#pragma omp parallel for schedule(static)
+    cloud.normals_.resize(cloud.points_.size());
+    cloud.curvatures_.resize(cloud.points_.size());
+    // #pragma omp parallel for schedule(static)
     for (int i = 0; i < (int)covariances.size(); i++) {
-        Eigen::Vector3d normal =
-                utility::mathtool::FastEigen3x3(covariances[i]).normalized();
+        auto result = utility::mathtool::FastEigen3x3(covariances[i]);
+        Eigen::Vector3d normal = std::get<0>(result).normalized();
+        std::vector<double> evals = std::get<1>(result);
+
+        // Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d>
+        // solver(covariances[i]); Eigen::Vector3d eigenvalues =
+        // solver.eigenvalues(); Eigen::Matrix3d eigenvectors =
+        // solver.eigenvectors();
+
+        // for (int j = 0; j < 3; j++) {
+        //     std::cout << evals[j] << ";" << eigenvalues(j) << std::endl;
+        // }
+        // std::cout << std::endl;
+
+        geometry::curvature* curvature = new geometry::curvature();
+        curvature->gaussian_curvature = evals[1] * evals[2];
+        curvature->mean_curvature = 0.5 * (evals[1] + evals[2]);
+        curvature->total_curvature = pow(evals[1], 2) + pow(evals[2], 2);
         // viewpoint/tangentplane/givendirection
         cloud.normals_[i] = normal;
         cloud.covariances_[i] = covariances[i];
+        cloud.curvatures_[i] = curvature;
     }
 }
 
@@ -115,6 +134,41 @@ void orient_normals_towards_positive_z(geometry::PointCloud& cloud) {
         } else if (normal.dot(orientation_reference) < 0.0) {
             normal *= -1.0;  // flip the normal
         }
+    }
+}
+
+void normal_aggregation_x(geometry::PointCloud& cloud,
+                          geometry::PointCloud::Ptr target_cloud,
+                          float ratio) {
+    if (!cloud.HasNormals()) {
+        LOG_ERROR("No normals in the PointCloud. Can not aggregate normals");
+    }
+    target_cloud->points_.resize(cloud.points_.size());
+    target_cloud->normals_ = cloud.normals_;
+#pragma omp parallel for
+    for (int i = 0; i < cloud.points_.size(); i++) {
+        Eigen::Vector3d point = {
+                cloud.points_[i].x() + ratio * cloud.normals_[i].x(),
+                cloud.points_[i].y(), cloud.points_[i].z()};
+        target_cloud->points_[i] = point;
+    }
+}
+
+void normal_aggregation_y(geometry::PointCloud& cloud,
+                          geometry::PointCloud::Ptr target_cloud,
+                          float ratio) {
+    if (!cloud.HasNormals()) {
+        LOG_ERROR("No normals in the PointCloud. Can not aggregate normals");
+    }
+    target_cloud->points_.resize(cloud.points_.size());
+    target_cloud->normals_ = cloud.normals_;
+#pragma omp parallel for
+    for (int i = 0; i < cloud.points_.size(); i++) {
+        Eigen::Vector3d point = {
+                cloud.points_[i].x(),
+                cloud.points_[i].y() + ratio * cloud.normals_[i].y(),
+                cloud.points_[i].z()};
+        target_cloud->points_[i] = point;
     }
 }
 

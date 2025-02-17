@@ -85,17 +85,101 @@ void tiff_to_pointcloud(const std::string& tiff_path,
               pointcloud->points_.size());
 }
 
+// fusion with grayscale intensity
+void tiff_to_pointcloud(const std::string& tiff_path,
+                        const std::string& intensity_map_path,
+                        geometry::PointCloud::Ptr pointcloud,
+                        const Eigen::Vector3d& ratio,
+                        bool remove_bottom) {
+    cv::Mat tiff_image;
+    if (!utility::read_tiff(tiff_path, tiff_image)) {
+        return;
+    }
+    cv::Mat intensity_map =
+            cv::imread(intensity_map_path, cv::IMREAD_UNCHANGED);
+    cv::imwrite("inetsnsity_map.png", intensity_map);
+    if (intensity_map.empty()) {
+        LOG_ERROR("intensity map is empty");
+        return;
+    }
+    if (intensity_map.size() != tiff_image.size()) {
+        LOG_ERROR("intensity map size does not match with tiff image size");
+        return;
+    }
+    if (intensity_map.type() != CV_8UC1) {
+        LOG_WARN("intensity map is not grayscale, convert to grayscale");
+        cv::cvtColor(intensity_map, intensity_map, cv::COLOR_BGR2GRAY);
+    }
+    // FIXME: Add support for more data type
+    std::vector<Eigen::Vector3d> pcd;
+    std::vector<float> intensities;
+    // Reserve memory to avoid reallocations
+    pcd.resize(tiff_image.rows * tiff_image.cols);
+    intensities.resize(tiff_image.rows * tiff_image.cols);
+    if (tiff_image.type() == CV_32FC1) {
+// Use OpenMP
+#pragma omp parallel for
+        for (int i = 0; i < tiff_image.rows; ++i) {
+            const float* row_ptr = tiff_image.ptr<float>(i);
+            const __uint8_t* int_row_ptr = intensity_map.ptr<__uint8_t>(i);
+            double y = i * ratio.y();
+            for (int j = 0; j < tiff_image.cols; ++j) {
+                double x = j * ratio.x();
+                double z = row_ptr[j] * ratio.z();
+                pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
+                intensities[i * tiff_image.cols + j] =
+                        static_cast<float>(int_row_ptr[j]);
+            }
+        }
+    } else if (tiff_image.type() == CV_16SC1) {
+        // stored data as 16-bit integer
+        // Use OpenMP
+        // #pragma omp parallel for
+        for (int i = 0; i < tiff_image.rows; ++i) {
+            const short* row_ptr = tiff_image.ptr<short>(i);
+            const __uint8_t* int_row_ptr = intensity_map.ptr<__uint8_t>(i);
+            double y = i * ratio.y();
+            for (int j = 0; j < tiff_image.cols; ++j) {
+                double x = j * ratio.x();
+                double z = row_ptr[j] * ratio.z();
+                pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
+                intensities[i * tiff_image.cols + j] =
+                        static_cast<float>(int_row_ptr[j]);
+            }
+        }
+    }
+
+    if (remove_bottom) {
+        std::vector<Eigen::Vector3d> new_pcd;
+        std::vector<float> new_intensities;
+        for (size_t i = 0; i < pcd.size(); ++i) {
+            if (pcd[i].z() > 0) {
+                new_pcd.push_back(pcd[i]);
+                new_intensities.push_back(intensities[i]);
+            }
+        }
+        pcd = new_pcd;
+        intensities = new_intensities;
+    }
+    pointcloud->points_ = pcd;
+    pointcloud->intensities_ = intensities;
+    LOG_DEBUG("Read from tiff file with pointcloud(intensity) size: {}",
+              pointcloud->points_.size());
+}
+
 void mat_to_pointcloud(const cv::Mat& mat,
-                       geometry::PointCloud::Ptr pointcloud) {
+                       geometry::PointCloud::Ptr pointcloud,
+                       const Eigen::Vector3d& ratio,
+                       bool remove_bottom) {
     std::vector<Eigen::Vector3d> pcd;
     pcd.resize(mat.rows * mat.cols);
     for (int i = 0; i < mat.rows; ++i) {
         const float* row_ptr = mat.ptr<float>(i);
-        float y = i * 0.03;
+        float y = i * ratio.y();
 #pragma omp parallel for
         for (int j = 0; j < mat.cols; ++j) {
-            float x = j * 0.01;
-            float z = row_ptr[j] * 0.001;
+            float x = j * ratio.x();
+            float z = row_ptr[j] * ratio.z();
             pcd[i * mat.cols + j] = Eigen::Vector3d(x, y, z);
         }
     }

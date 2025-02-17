@@ -2,7 +2,6 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
-
 namespace hymson3d {
 namespace utility {
 namespace mathtool {
@@ -103,7 +102,8 @@ Eigen::Vector3d ComputeEigenvector1(const Eigen::Matrix3d &A,
     }
 }
 
-Eigen::Vector3d FastEigen3x3(const Eigen::Matrix3d &covariance) {
+std::tuple<Eigen::Vector3d, std::vector<double>> FastEigen3x3(
+        const Eigen::Matrix3d &covariance) {
     // Current version based on
     // https://www.geometrictools.com/Documentation/RobustEigenSymmetric3x3.pdf
     // which handles edge cases like points on a plane
@@ -111,7 +111,7 @@ Eigen::Vector3d FastEigen3x3(const Eigen::Matrix3d &covariance) {
     Eigen::Matrix3d A = covariance;
     double max_coeff = A.maxCoeff();
     if (max_coeff == 0) {
-        return Eigen::Vector3d::Zero();
+        return {Eigen::Vector3d::Zero(), {0, 0, 0}};
     }
     A /= max_coeff;
 
@@ -153,37 +153,56 @@ Eigen::Vector3d FastEigen3x3(const Eigen::Matrix3d &covariance) {
             evec2 = ComputeEigenvector0(A, eval(2));
             if (eval(2) < (0) && eval(2) < eval(1)) {
                 A *= max_coeff;
-                return evec2;
+                std::vector<double> evals = {eval(2),
+                                             std::min(eval(1), eval(0)),
+                                             std::max(eval(1), eval(0))};
+                return std::make_tuple(evec2, evals);
             }
             evec1 = ComputeEigenvector1(A, evec2, eval(1));
             A *= max_coeff;
             if (eval(1) < eval(0) && eval(1) < eval(2)) {
-                return evec1;
+                std::vector<double> evals = {eval(1),
+                                             std::min(eval(0), eval(2)),
+                                             std::max(eval(0), eval(2))};
+                return std::make_tuple(evec1, evals);
             }
             evec0 = evec1.cross(evec2);
-            return evec0;
+            std::vector<double> evals = {eval(0), std::min(eval(1), eval(2)),
+                                         std::max(eval(1), eval(2))};
+            return std::make_tuple(evec0, evals);
         } else {
             evec0 = ComputeEigenvector0(A, eval(0));
             if (eval(0) < eval(1) && eval(0) < eval(2)) {
                 A *= max_coeff;
-                return evec0;
+                std::vector<double> evals = {eval(0),
+                                             std::min(eval(1), eval(2)),
+                                             std::max(eval(1), eval(2))};
+                return std::make_tuple(evec0, evals);
             }
             evec1 = ComputeEigenvector1(A, evec0, eval(1));
             A *= max_coeff;
             if (eval(1) < eval(0) && eval(1) < eval(2)) {
-                return evec1;
+                std::vector<double> evals = {eval(1),
+                                             std::min(eval(0), eval(2)),
+                                             std::max(eval(0), eval(2))};
+                return std::make_tuple(evec1, evals);
             }
             evec2 = evec0.cross(evec1);
-            return evec2;
+            std::vector<double> evals = {eval(2), std::min(eval(1), eval(0)),
+                                         std::max(eval(1), eval(0))};
+            return std::make_tuple(evec2, evals);
         }
     } else {
         A *= max_coeff;
         if (A(0, 0) < A(1, 1) && A(0, 0) < A(2, 2)) {
-            return Eigen::Vector3d(1, 0, 0);
+            return std::make_tuple(Eigen::Vector3d(1, 0, 0),
+                                   std::vector<double>{1, 0, 0});
         } else if (A(1, 1) < A(0, 0) && A(1, 1) < A(2, 2)) {
-            return Eigen::Vector3d(0, 1, 0);
+            return std::make_tuple(Eigen::Vector3d(0, 1, 0),
+                                   std::vector<double>{0, 1, 0});
         } else {
-            return Eigen::Vector3d(0, 0, 1);
+            return std::make_tuple(Eigen::Vector3d(0, 0, 1),
+                                   std::vector<double>{0, 1, 0});
         }
     }
 }

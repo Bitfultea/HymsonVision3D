@@ -27,6 +27,14 @@ void ComputerNormals_VCM(geometry::PointCloud& cloud);
 
 void orient_normals_towards_positive_z(geometry::PointCloud& cloud);
 
+void normal_aggregation_x(geometry::PointCloud& cloud,
+                          geometry::PointCloud::Ptr target_cloud,
+                          float ratio);
+
+void normal_aggregation_y(geometry::PointCloud& cloud,
+                          geometry::PointCloud::Ptr target_cloud,
+                          float ratio);
+
 }  // namespace feature
 }  // namespace core
 }  // namespace hymson3d

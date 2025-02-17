@@ -82,6 +82,25 @@ void write_ply(const std::string& filename,
         plyOut.getElement("vertex").addProperty<double>("ny", ny);
         plyOut.getElement("vertex").addProperty<double>("nz", nz);
     }
+    if (pointcloud->HasIntensities()) {
+        LOG_INFO("Write Intensity to PLY");
+        std::vector<float> intensity;
+        intensity.reserve(pointcloud->points_.size());
+        for (const auto& i : pointcloud->intensities_) {
+            intensity.push_back(i);
+        }
+        plyOut.getElement("vertex").addProperty<float>("intensity", intensity);
+    }
+    if (pointcloud->HasCurvatures()) {
+        LOG_INFO("Write Curvature to PLY");
+        std::vector<double> curvature;
+        curvature.reserve(pointcloud->points_.size());
+        for (const auto& c : pointcloud->curvatures_) {
+            // use total curvature for visualization
+            curvature.push_back(c->total_curvature);
+        }
+        plyOut.getElement("vertex").addProperty<double>("curvature", curvature);
+    }
 
     if (format == FileFormat::ASCII) {
         plyOut.write(filename, happly::DataFormat::ASCII);

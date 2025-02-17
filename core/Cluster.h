@@ -16,6 +16,11 @@ public:
                                   size_t max_cluster_size,
                                   int knn);
 
+    static void RegionGrowing_PCL(geometry::PointCloud& cloud,
+                                  float normal_degree,
+                                  float curvature_threshold,
+                                  int knn);
+
     static int DBSCANCluster(geometry::PointCloud& cloud,
                              double eps,
                              size_t min_points);
