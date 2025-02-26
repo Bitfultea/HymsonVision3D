@@ -9,6 +9,8 @@
 #include "Curvature.h"
 #include "Feature.h"
 #include "Filter.h"
+#include "MathTool.h"
+#include "PlaneDetection.h"
 
 namespace hymson3d {
 namespace pipeline {
@@ -436,12 +438,55 @@ void DefectDetection::detect_pinholes_nva(
         long_clouds[i]->PaintUniformColor(Eigen::Vector3d(1.0, 1.0, 1.0));
         float ratio_x = 0.25;
         float ratio_y = 0.5;
-        double dist_x = 0.0001;
-        double dist_y = 0.0001;
-        bool use_fpfh = true;
+        double dist_x = 1e-4;
+        double dist_y = 1e-4;  // less on y direction
+        bool use_fpfh = false;
         FPFH_NVA(long_clouds[i], ratio_x, ratio_y, dist_x, dist_y, use_fpfh);
         utility::write_ply("pinhole_nva" + std::to_string(i) + ".ply",
                            long_clouds[i], utility::FileFormat::BINARY);
+    }
+}
+
+void DefectDetection::detect_CSAD(std::shared_ptr<geometry::PointCloud> cloud,
+                                  geometry::KDTreeSearchParamRadius param,
+                                  float height_threshold,
+                                  float radius,
+                                  size_t min_points,
+                                  Eigen::Vector3d transformation_matrix,
+                                  bool denoise,
+                                  bool debug_mode) {
+    // 1.0 keep egde points and r-corner points
+    std::shared_ptr<geometry::PointCloud> points =
+            std::make_shared<geometry::PointCloud>();
+    height_filter(cloud, points, height_threshold);
+
+    // 1.1 denoise
+    if (denoise) {
+        LOG_INFO("Denoise: {} before denoised.", points->points_.size());
+        core::Filter filter;
+        auto filter_res = filter.StatisticalOutliers(points, 250, 2.0);
+        points = std::get<0>(filter_res);
+        LOG_INFO("Denoise: {} After denoised.", points->points_.size());
+    }
+
+    // 1.1 cluster
+    int num_clusters =
+            core::Cluster::DBSCANCluster(*points, radius, min_points);
+    std::vector<geometry::PointCloud::Ptr> clusters;
+    part_separation(points, clusters, num_clusters);
+
+    // 1.1 separate r-corner and the flip-edge
+    std::vector<geometry::PointCloud::Ptr> long_clouds;
+    std::vector<geometry::PointCloud::Ptr> corners_clouds;
+    extract_long_edge(long_clouds, corners_clouds, clusters, num_clusters);
+
+    // 2.0 nva method
+    slice_along_y(long_clouds, transformation_matrix);
+    for (int i = 0; i < long_clouds.size(); i++) {
+        Eigen::MatrixXd generated_map;
+        generated_map = bspline_interpolation(long_clouds[i]);
+        if (debug_mode) plot_matrix(generated_map, "matrix.png");
+        generate_low_rank_matrix(generated_map);
     }
 }
 
@@ -550,12 +595,21 @@ void DefectDetection::part_separation(
         auto pcd = std::make_shared<geometry::PointCloud>();
         clusters.emplace_back(pcd);
     }
-    for (size_t i = 0; i < cloud->points_.size(); i++) {
-        if (cloud->labels_[i] >= 0) {
-            clusters[cloud->labels_[i]]->points_.emplace_back(
-                    cloud->points_[i]);
-            clusters[cloud->labels_[i]]->normals_.emplace_back(
-                    cloud->normals_[i]);
+    if (cloud->HasNormals()) {
+        for (size_t i = 0; i < cloud->points_.size(); i++) {
+            if (cloud->labels_[i] >= 0) {
+                clusters[cloud->labels_[i]]->points_.emplace_back(
+                        cloud->points_[i]);
+                clusters[cloud->labels_[i]]->normals_.emplace_back(
+                        cloud->normals_[i]);
+            }
+        }
+    } else {
+        for (size_t i = 0; i < cloud->points_.size(); i++) {
+            if (cloud->labels_[i] >= 0) {
+                clusters[cloud->labels_[i]]->points_.emplace_back(
+                        cloud->points_[i]);
+            }
         }
     }
 }
@@ -566,6 +620,7 @@ void DefectDetection::extract_long_edge(
         std::vector<geometry::PointCloud::Ptr> &clusters,
         int num_clusters) {
     LOG_DEBUG("Start extracttion long edge");
+    bool has_normals = clusters[0]->HasNormals();
     for (int i = 0; i < num_clusters; i++) {
         LOG_DEBUG("cluster {}: {} points", i, clusters[i]->points_.size());
         if (clusters[i]->points_.size() > 100000) {
@@ -578,24 +633,48 @@ void DefectDetection::extract_long_edge(
                     std::make_shared<geometry::PointCloud>();
             std::shared_ptr<geometry::PointCloud> corner_right_cloud =
                     std::make_shared<geometry::PointCloud>();
-            for (size_t j = 0; j < clusters[i]->points_.size(); j++) {
-                if (clusters[i]->points_[j].y() < y_min + 3.0) {
-                    corner_left_cloud->points_.emplace_back(
-                            clusters[i]->points_[j]);
-                    corner_left_cloud->normals_.emplace_back(
-                            clusters[i]->normals_[j]);
-                    corner_left_cloud->labels_.emplace_back(0);
-                } else if (clusters[i]->points_[j].y() >= y_min + 3.0 &&
-                           clusters[i]->points_[j].y() <= y_max - 3.0) {
-                    long_cloud->points_.emplace_back(clusters[i]->points_[j]);
-                    long_cloud->normals_.emplace_back(clusters[i]->normals_[j]);
-                    long_cloud->labels_.emplace_back(0);
-                } else {
-                    corner_right_cloud->points_.emplace_back(
-                            clusters[i]->points_[j]);
-                    corner_right_cloud->normals_.emplace_back(
-                            clusters[i]->normals_[j]);
-                    corner_right_cloud->labels_.emplace_back(0);
+            if (has_normals) {
+                for (size_t j = 0; j < clusters[i]->points_.size(); j++) {
+                    if (clusters[i]->points_[j].y() < y_min + 3.0) {
+                        corner_left_cloud->points_.emplace_back(
+                                clusters[i]->points_[j]);
+                        corner_left_cloud->normals_.emplace_back(
+                                clusters[i]->normals_[j]);
+                        corner_left_cloud->labels_.emplace_back(0);
+                    } else if (clusters[i]->points_[j].y() >= y_min + 3.0 &&
+                               clusters[i]->points_[j].y() <= y_max - 3.0) {
+                        long_cloud->points_.emplace_back(
+                                clusters[i]->points_[j]);
+                        long_cloud->normals_.emplace_back(
+                                clusters[i]->normals_[j]);
+                        long_cloud->labels_.emplace_back(0);
+                    } else {
+                        corner_right_cloud->points_.emplace_back(
+                                clusters[i]->points_[j]);
+                        corner_right_cloud->normals_.emplace_back(
+                                clusters[i]->normals_[j]);
+                        corner_right_cloud->labels_.emplace_back(0);
+                    }
+                }
+            } else {
+                for (size_t j = 0; j < clusters[i]->points_.size(); j++) {
+                    if (clusters[i]->points_[j].y() < y_min + 3.0) {
+                        corner_left_cloud->points_.emplace_back(
+                                clusters[i]->points_[j]);
+
+                        corner_left_cloud->labels_.emplace_back(0);
+                    } else if (clusters[i]->points_[j].y() >= y_min + 3.0 &&
+                               clusters[i]->points_[j].y() <= y_max - 3.0) {
+                        long_cloud->points_.emplace_back(
+                                clusters[i]->points_[j]);
+
+                        long_cloud->labels_.emplace_back(0);
+                    } else {
+                        corner_right_cloud->points_.emplace_back(
+                                clusters[i]->points_[j]);
+
+                        corner_right_cloud->labels_.emplace_back(0);
+                    }
                 }
             }
 
@@ -610,26 +689,53 @@ void DefectDetection::extract_long_edge(
 void DefectDetection::slice_along_y(
         std::vector<geometry::PointCloud::Ptr> &long_clouds,
         Eigen::Vector3d transformation_matrix) {
-    for (int i = 0; i < long_clouds.size(); i++) {
-        Eigen::Vector3d min_bound = long_clouds[i]->GetMinBound();
-        Eigen::Vector3d max_bound = long_clouds[i]->GetMaxBound();
-        int num_slice = (int)(((max_bound.y() - min_bound.y()) /
-                               transformation_matrix.y()) +
-                              1);
-        long_clouds[i]->y_slices_.resize(num_slice);
-        long_clouds[i]->ny_slices_.resize(num_slice);
-        long_clouds[i]->y_slice_idxs.resize(num_slice);
-        for (size_t j = 0; j < long_clouds[i]->points_.size(); j++) {
-            auto pt = long_clouds[i]->points_[j];
-            auto n = long_clouds[i]->normals_[j];
-            int slice_idx =
-                    (int)((pt.y() - min_bound.y()) / transformation_matrix.y());
-            if (slice_idx == 0) std::cout << pt.y() << std::endl;
-            long_clouds[i]->y_slices_[slice_idx].emplace_back(
-                    Eigen::Vector2d(pt.x(), pt.z()));
-            long_clouds[i]->ny_slices_[slice_idx].emplace_back(
-                    Eigen::Vector3d(n.x(), n.y(), n.z()));
-            long_clouds[i]->y_slice_idxs[slice_idx].emplace_back(j);
+    bool has_normals = long_clouds[0]->HasNormals();
+    if (has_normals) {
+        for (int i = 0; i < long_clouds.size(); i++) {
+            Eigen::Vector3d min_bound = long_clouds[i]->GetMinBound();
+            Eigen::Vector3d max_bound = long_clouds[i]->GetMaxBound();
+            int num_slice = (int)(((max_bound.y() - min_bound.y()) /
+                                   transformation_matrix.y()) +
+                                  1);
+            long_clouds[i]->y_slices_.resize(num_slice);
+            long_clouds[i]->ny_slices_.resize(num_slice);
+            long_clouds[i]->y_slice_idxs.resize(num_slice);
+            for (size_t j = 0; j < long_clouds[i]->points_.size(); j++) {
+                auto pt = long_clouds[i]->points_[j];
+                auto n = long_clouds[i]->normals_[j];
+                int slice_idx = (int)((pt.y() - min_bound.y()) /
+                                      transformation_matrix.y());
+                long_clouds[i]->y_slices_[slice_idx].emplace_back(
+                        Eigen::Vector2d(pt.x(), pt.z()));
+                long_clouds[i]->ny_slices_[slice_idx].emplace_back(
+                        Eigen::Vector3d(n.x(), n.y(), n.z()));
+                long_clouds[i]->y_slice_idxs[slice_idx].emplace_back(j);
+            }
+        }
+    } else {
+        for (int i = 0; i < long_clouds.size(); i++) {
+            Eigen::Vector3d min_bound = long_clouds[i]->GetMinBound();
+            Eigen::Vector3d max_bound = long_clouds[i]->GetMaxBound();
+            int num_slice =
+                    (int)((max_bound.y() / transformation_matrix.y()) -
+                          (min_bound.y()) / transformation_matrix.y() + 1);
+            long_clouds[i]->y_slices_.resize(num_slice);
+            long_clouds[i]->y_slice_idxs.resize(num_slice);
+            auto pre_y = long_clouds[i]->points_[0].y();
+            int slice_idx = 0;
+            for (size_t j = 0; j < long_clouds[i]->points_.size(); j++) {
+                auto pt = long_clouds[i]->points_[j];
+                // int slice_idx =
+                //         std::floor((pt.y() / transformation_matrix.y()) -
+                //                    (min_bound.y() /
+                //                    transformation_matrix.y()));
+                if (pt.y() != pre_y) {
+                    slice_idx += 1;
+                    pre_y = pt.y();
+                }
+                long_clouds[i]->y_slices_[slice_idx].emplace_back(
+                        Eigen::Vector2d(pt.x(), pt.z()));
+            }
         }
     }
 }
@@ -662,5 +768,171 @@ void DefectDetection::process_y_slice(std::vector<Eigen::Vector2d> &y_slice,
         }
     }
 }
+
+Eigen::MatrixXd DefectDetection::bspline_interpolation(
+        geometry::PointCloud::Ptr cloud) {
+    // get common area
+    std::vector<std::vector<Eigen::Vector2d>> common_parts;
+    double min_x = -1 * std::numeric_limits<double>::max();
+    double max_x = std::numeric_limits<double>::max();
+    for (int i = 0; i < cloud->y_slices_.size(); i++) {
+        if (cloud->y_slices_[i].size() == 0) continue;
+        if (cloud->y_slices_[i][0].x() > min_x)
+            min_x = cloud->y_slices_[i][0].x();
+        if (cloud->y_slices_[i].back().x() < max_x)
+            max_x = cloud->y_slices_[i].back().x();
+    }
+    for (int i = 0; i < cloud->y_slices_.size(); i++) {
+        std::vector<Eigen::Vector2d> selected_area;
+        for (int j = 0; j < cloud->y_slices_[i].size(); j++) {
+            if (cloud->y_slices_[i][j].x() >= min_x &&
+                cloud->y_slices_[i][j].x() <= max_x) {
+                selected_area.emplace_back(cloud->y_slices_[i][j]);
+            }
+        }
+        common_parts.emplace_back(selected_area);
+    }
+
+    // use common part to fit a curve
+    core::PlaneDetection plane_detector;
+    int sampled_pts = 100;
+    Eigen::MatrixXd sampled_map(sampled_pts, common_parts.size());
+    for (int i = 0; i < common_parts.size(); i++) {
+        Eigen::VectorXd gen_pts;
+        gen_pts = plane_detector.fit_a_curve(common_parts[i], sampled_pts, i,
+                                             false);
+        sampled_map.col(i) = gen_pts;
+    }
+
+    return sampled_map;
+}
+
+void DefectDetection::plot_matrix(Eigen::MatrixXd &mat, std::string name) {
+    // Convert the matrix to a OpenCV Mat
+    cv::Mat cvMat(mat.rows(), mat.cols(), CV_64F);
+    for (int i = 0; i < mat.rows(); ++i) {
+        for (int j = 0; j < mat.cols(); ++j) {
+            cvMat.at<double>(i, j) = mat(i, j);
+        }
+    }
+
+    // Plot the matrix as an image
+    cv::Mat image;
+    cv::normalize(cvMat, image, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+
+    // Apply a rainbow color map to the grayscale image
+    cv::Mat rainbowImage;
+    cv::applyColorMap(image, rainbowImage, cv::COLORMAP_RAINBOW);
+
+    cv::imwrite(name, rainbowImage);
+}
+
+class R_pca {
+public:
+    Eigen::MatrixXd D;
+    Eigen::MatrixXd S;
+    Eigen::MatrixXd Y;
+    Eigen::MatrixXd L;
+    double mu;
+    double mu_inv;
+    double lmbda;
+
+    R_pca(const Eigen::MatrixXd &D_in,
+          double mu_in = 0.0,
+          double lmbda_in = 0.0)
+        : D(D_in), S(D_in.rows(), D_in.cols()), Y(D_in.rows(), D_in.cols()) {
+        if (mu_in != 0.0) {
+            mu = mu_in;
+        } else {
+            mu = D.size() / (4 * norm(D, 1));
+        }
+        mu_inv = 1.0 / mu;
+
+        if (lmbda_in != 0.0) {
+            lmbda = lmbda_in;
+        } else {
+            lmbda = 1.0 / std::sqrt(std::max(D.rows(), D.cols()));
+        }
+    }
+
+    // Frobenius norm
+    static double frobenius_norm(const Eigen::MatrixXd &M) { return M.norm(); }
+
+    // Shrinkage function
+    static Eigen::MatrixXd shrink(const Eigen::MatrixXd &M, double tau) {
+        Eigen::MatrixXd result = M.unaryExpr([tau](double val) {
+            return std::copysign(std::max(std::abs(val) - tau, 0.0), val);
+        });
+        return result;
+    }
+
+    // SVD thresholding function
+    Eigen::MatrixXd svd_threshold(const Eigen::MatrixXd &M, double tau) {
+        Eigen::JacobiSVD<Eigen::MatrixXd> svd(
+                M, Eigen::ComputeThinU | Eigen::ComputeThinV);
+        Eigen::VectorXd S = svd.singularValues();
+        Eigen::MatrixXd U = svd.matrixU();
+        Eigen::MatrixXd V = svd.matrixV();
+
+        // Shrink the singular values
+        Eigen::VectorXd S_shrunk = shrink(S, tau);
+
+        // Reconstruct the matrix with the shrunk singular values
+        return U * S_shrunk.asDiagonal() * V.transpose();
+    }
+
+    // Fit function (Principal Component Pursuit)
+    std::pair<Eigen::MatrixXd, Eigen::MatrixXd> fit(double tol = -1.0,
+                                                    int max_iter = 1000,
+                                                    int iter_print = 100) {
+        int iter = 0;
+        double err = std::numeric_limits<double>::infinity();
+        Eigen::MatrixXd Sk = S;
+        Eigen::MatrixXd Yk = Y;
+        Eigen::MatrixXd Lk = Eigen::MatrixXd::Zero(D.rows(), D.cols());
+
+        // Set tolerance
+        double _tol = (tol > 0) ? tol : 1E-7 * frobenius_norm(D);
+
+        // PCP algorithm loop
+        while (err > _tol && iter < max_iter) {
+            Lk = svd_threshold(D - Sk + mu_inv * Yk, mu_inv);   // Step 3
+            Sk = shrink(D - Lk + mu_inv * Yk, mu_inv * lmbda);  // Step 4
+            Yk = Yk + mu * (D - Lk - Sk);                       // Step 5
+            err = frobenius_norm(D - Lk - Sk);
+            iter++;
+
+            if (iter % iter_print == 0 || iter == 1 || iter > max_iter ||
+                err <= _tol) {
+                std::cout << "Iteration: " << iter << ", Error: " << err
+                          << std::endl;
+            }
+        }
+
+        L = Lk;
+        S = Sk;
+        return {Lk, Sk};
+    }
+
+private:
+    static double norm(const Eigen::MatrixXd &M, int order) {
+        if (order == 1) {
+            return M.cwiseAbs().sum();
+        }
+        return 0.0;
+    }
+};
+
+void DefectDetection::generate_low_rank_matrix(Eigen::MatrixXd &mat) {
+    Eigen::MatrixXd L, S;
+    // utility::mathtool::RPCA(mat, L, S);
+    R_pca r_pca(mat);
+    std::pair<Eigen::MatrixXd, Eigen::MatrixXd> L_S = r_pca.fit();
+    L = L_S.first;
+    S = L_S.second;
+    plot_matrix(L, "L.png");
+    plot_matrix(S, "S.png");
+}
+
 }  // namespace pipeline
 }  // namespace hymson3d

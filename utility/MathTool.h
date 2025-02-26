@@ -37,6 +37,17 @@ T GetMAD(const std::vector<T> &buffer, T median) {
     return k * shifted[N / 2];
 }
 
+Eigen::MatrixXd singularValueThresholding(const Eigen::MatrixXd &D, double tau);
+
+Eigen::MatrixXd softThresholding(const Eigen::MatrixXd &X, double lambda);
+
+void RPCA(const Eigen::MatrixXd &M,
+          Eigen::MatrixXd &L,
+          Eigen::MatrixXd &S,
+          double lambda = -1,
+          double tol = 1e-6,
+          int maxIter = 1000);
+
 }  // namespace mathtool
 }  // namespace utility
 }  // namespace hymson3d

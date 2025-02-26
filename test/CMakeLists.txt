@@ -35,6 +35,11 @@ add_executable(
   test_calib.cpp
 )
 
+add_executable(
+  def_test_2
+  test_bspline.cpp
+)
+
 enable_testing()
 
 add_executable(testGoogleTest
@@ -74,6 +79,16 @@ target_link_libraries(
   pipeline
   core_lib
 )
+
+target_link_libraries(
+  def_test_2
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
+  core_lib
+)
+
 
 
 target_link_libraries(

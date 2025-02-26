@@ -18,6 +18,7 @@ if(UNIX)
         utility_lib
         ${PCL_LIBRARIES}
         geometry_3d_lib
+        geometry_2d_lib
         gmp
         )
 else()
@@ -26,5 +27,6 @@ else()
         utility_lib
         ${PCL_LIBRARIES}
         geometry_3d_lib
+        geometry_2d_lib
         )
 endif()

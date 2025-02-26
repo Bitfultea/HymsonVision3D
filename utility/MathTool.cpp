@@ -1,7 +1,10 @@
 #include "MathTool.h"
 
+#include <Eigen/Core>
 #include <Eigen/Dense>
 #include <algorithm>
+
+#include "Logger.h"
 namespace hymson3d {
 namespace utility {
 namespace mathtool {
@@ -203,6 +206,73 @@ std::tuple<Eigen::Vector3d, std::vector<double>> FastEigen3x3(
         } else {
             return std::make_tuple(Eigen::Vector3d(0, 0, 1),
                                    std::vector<double>{0, 1, 0});
+        }
+    }
+}
+
+// SVD软阈值处理
+Eigen::MatrixXd singularValueThresholding(const Eigen::MatrixXd &D,
+                                          double tau) {
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(
+            D, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    Eigen::VectorXd singularValues = svd.singularValues();
+
+    // thresholding
+    for (int i = 0; i < singularValues.size(); ++i) {
+        singularValues(i) = std::max(singularValues(i) - tau, 0.0);
+    }
+
+    // compute lowrank matrix L
+    return svd.matrixU() * singularValues.asDiagonal() *
+           svd.matrixV().transpose();
+}
+
+Eigen::MatrixXd softThresholding(const Eigen::MatrixXd &X, double lambda) {
+    return (X.array().abs() > lambda)
+            .select(X.array() - lambda * X.array().sign(), 0);
+}
+
+// ALM method based
+void RPCA(const Eigen::MatrixXd &M,
+          Eigen::MatrixXd &L,
+          Eigen::MatrixXd &S,
+          double lambda,
+          double tol,
+          int maxIter) {
+    int m = M.rows();
+    int n = M.cols();
+
+    if (lambda < 0) {
+        lambda = 1.0 / sqrt(std::max(m, n));
+    }
+
+    // 初始化
+    Eigen::MatrixXd Y = M / std::max(M.norm(), 1.0);
+    L = Eigen::MatrixXd::Zero(m, n);
+    S = Eigen::MatrixXd::Zero(m, n);
+    double mu = 1.25 / L.norm();
+    double mu_bar = mu * 1e7;
+    double rho = 1.5;
+
+    for (int iter = 0; iter < maxIter; ++iter) {
+        // 更新 L（低秩部分）
+        L = singularValueThresholding(M - S + (1.0 / mu) * Y, 1.0 / mu);
+
+        // 更新 S（稀疏部分）
+        S = softThresholding(M - L + (1.0 / mu) * Y, lambda / mu);
+
+        // 更新拉格朗日乘子
+        Eigen::MatrixXd Z = M - L - S;
+        Y = Y + mu * Z;
+
+        // 更新 mu
+        mu = std::min(mu * rho, mu_bar);
+
+        // 收敛条件
+        std::cout << Z.norm() << "; " << M.norm() << std::endl;
+        if (Z.norm() / M.norm() < tol) {
+            LOG_INFO("Converged in {} iterations.", iter + 1);
+            break;
         }
     }
 }

@@ -39,6 +39,16 @@ public:
                                     bool denoise = true,
                                     bool debug_mode = true);
 
+    static void detect_CSAD(std::shared_ptr<geometry::PointCloud> cloud,
+                            geometry::KDTreeSearchParamRadius param,
+                            float height_threshold = 0.0,
+                            float radius = 0.08,
+                            size_t min_points = 5,
+                            Eigen::Vector3d transformation_matrix =
+                                    Eigen::Vector3d(0.01, 0.03, 0.001),
+                            bool denoise = true,
+                            bool debug_mode = true);
+
 private:
     static void process_y_slice(std::vector<Eigen::Vector2d> &y_slice,
                                 std::vector<Eigen::Vector3d> &ny_slice,
@@ -80,6 +90,14 @@ private:
     static void slice_along_x(
             std::vector<geometry::PointCloud::Ptr> &long_clouds,
             Eigen::Vector3d transformation_matrix);
+
+    static Eigen::MatrixXd bspline_interpolation(
+            geometry::PointCloud::Ptr cloud);
+
+    static void generate_low_rank_matrix(Eigen::MatrixXd &mat);
+
+    static void plot_matrix(Eigen::MatrixXd &mat,
+                            std::string name = "matrix.png");
 };
 
 }  // namespace pipeline
