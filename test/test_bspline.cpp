@@ -23,9 +23,11 @@ int main(int argc, char **argv) {
     // }
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
-    core::converter::tiff_to_pointcloud(argv[1], argv[2], pointcloud,
-                                        Eigen::Vector3d(0.01, 0.03, 0.001),
-                                        true);
+    //     core::converter::tiff_to_pointcloud(argv[1], argv[2], pointcloud,
+    //                                         Eigen::Vector3d(0.01, 0.03,
+    //                                         0.001), true);
+    core::converter::tiff_to_pointcloud(
+            argv[1], pointcloud, Eigen::Vector3d(0.01, 0.03, 0.001), true);
 
     // core::PlaneDetection plane_detector;
     // plane_detector.fit_a_curve(control_pts, 100);

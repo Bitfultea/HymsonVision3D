@@ -22,6 +22,9 @@ public:
                                 int plot_id = 0,
                                 bool debug_mode = true);
 
+    std::shared_ptr<geometry::BSpline> generate_a_curve(
+            std::vector<Eigen::Vector2d> control_pts);
+
 public:
     double search_radius = 0.1;
 

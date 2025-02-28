@@ -113,6 +113,7 @@ public:
     std::vector<curvature *> curvatures_;
     // y_slices
     std::vector<std::vector<Eigen::Vector2d>> y_slices_;
+    std::vector<double> y_slice_peaks;
     std::vector<std::vector<Eigen::Vector3d>> ny_slices_;
     std::vector<std::vector<size_t>> y_slice_idxs;
     std::vector<std::vector<Eigen::Vector2d>> x_slices_;

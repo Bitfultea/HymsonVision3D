@@ -72,6 +72,37 @@ geometry::Plane::Ptr PlaneDetection::fit_a_plane(
     return plane;
 }
 
+std::shared_ptr<geometry::BSpline> PlaneDetection::generate_a_curve(
+        std::vector<Eigen::Vector2d> control_pts) {
+    // 控制点 (x 和 y)
+    int n = control_pts.size();
+    Eigen::VectorXd x(n);
+    Eigen::VectorXd y(n);
+
+    for (int i = 0; i < control_pts.size(); ++i) {
+        x(i) = control_pts[i](0);
+        y(i) = control_pts[i](1);
+    }
+
+    // 创建样条对象
+    std::shared_ptr<geometry::BSpline> spline =
+            std::make_shared<geometry::BSpline>(3);  // 默认三次样条
+    spline->setControlPoints(x, y);
+
+    // 生成节点
+    Eigen::VectorXd knots =
+            spline->generateKnots(x.size(), x(0), x(x.size() - 1), 2);
+
+    spline->setKnots(knots);
+
+    // 生成样条基
+    Eigen::VectorXd pts =
+            Eigen::VectorXd::LinSpaced(100, x(0), x(x.size() - 1));
+    Eigen::MatrixXd B = spline->generateSplineBasis(pts);
+
+    return spline;
+}
+
 Eigen::VectorXd PlaneDetection::fit_a_curve(
         std::vector<Eigen::Vector2d> control_pts,
         int sampled_pts,
@@ -87,7 +118,7 @@ Eigen::VectorXd PlaneDetection::fit_a_curve(
         y(i) = control_pts[i](1);
     }
 
-    // 打印控制点的维度
+    // 打印控制点的维度x
     // std::cout << "Control points x size: " << x.size() << std::endl;
     // std::cout << "Control points y size: " << y.size() << std::endl;
 
@@ -113,7 +144,6 @@ Eigen::VectorXd PlaneDetection::fit_a_curve(
     //     std::cout << "Spline basis B size: " << B.rows() << "x" << B.cols()
     //               << std::endl;
 
-    // 将 Eigen::VectorXd 转换为 std::vector<double>
     std::vector<double> x_vec(x.data(), x.data() + x.size());
     std::vector<double> y_vec(y.data(), y.data() + y.size());
 
@@ -134,7 +164,6 @@ Eigen::VectorXd PlaneDetection::fit_a_curve(
     std::vector<double> u_vec(u.data(), u.data() + u.size());
     std::vector<double> v_vec(v.data(), v.data() + v.size());
 
-    //  转换为 std::vector
     std::vector<double> spline_x_vec(spline_x.data(),
                                      spline_x.data() + spline_x.size());
     std::vector<double> spline_y_vec(spline_y.data(),

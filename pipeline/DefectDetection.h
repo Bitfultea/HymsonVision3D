@@ -36,6 +36,10 @@ public:
                                     size_t min_points = 5,
                                     Eigen::Vector3d transformation_matrix =
                                             Eigen::Vector3d(0.01, 0.03, 0.001),
+                                    float ratio_x = 0.4,
+                                    float ratio_y = 0.4,
+                                    double dist_x = 1e-4,
+                                    double dist_y = 1e-4,
                                     bool denoise = true,
                                     bool debug_mode = true);
 
@@ -57,12 +61,13 @@ private:
 
     // Pipeline of turbine blade defect detection based on local geometric
     // pattern analysis
-    static void FPFH_NVA(std::shared_ptr<geometry::PointCloud> cloud,
-                         float ratio_x,
-                         float ratio_y,
-                         double dist_x,
-                         double dist_y,
-                         bool use_fpfh = false);
+    static std::shared_ptr<geometry::PointCloud> FPFH_NVA(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            float ratio_x,
+            float ratio_y,
+            double dist_x,
+            double dist_y,
+            bool use_fpfh = false);
 
     static void height_filter(std::shared_ptr<geometry::PointCloud> cloud,
                               std::shared_ptr<geometry::PointCloud> points,
