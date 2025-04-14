@@ -171,9 +171,10 @@ void read_ply(const std::string& filename,
         }
     }
     for (const auto& property : plyIn.getElement("vertex").getPropertyNames()) {
-        std::cout << "Property found: " << property << std::endl;
+        LOG_DEBUG("Property found: {}", property);
     }
-    LOG_INFO("Finish Reading PointCloud from PLY");
+    LOG_INFO("Finish Reading PointCloud with {} points from PLY.",
+             pointcloud->points_.size());
 }
 
 }  // namespace utility

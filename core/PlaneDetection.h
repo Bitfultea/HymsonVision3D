@@ -22,6 +22,12 @@ public:
                                 int plot_id = 0,
                                 bool debug_mode = true);
 
+    std::vector<Eigen::Vector2d> resample_a_curve(
+            std::vector<Eigen::Vector2d> control_pts,
+            int sampled_pts,
+            int plot_id = 0,
+            bool debug_mode = true);
+
     std::shared_ptr<geometry::BSpline> generate_a_curve(
             std::vector<Eigen::Vector2d> control_pts);
 

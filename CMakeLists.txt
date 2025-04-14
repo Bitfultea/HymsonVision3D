@@ -4,9 +4,10 @@ project( HymsonVisionProject )
 
 set(CMAKE_BUILD_TYPE Release) # Release,RelWithDebInfo,MinSizeRel,Debug
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}") # use google sanitizer
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -march=native -O3 -ftree-vectorize -pthread -fopenmp"
+  ) # use google sanitizer
 else()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} ")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -march=native -fopenmp")
 endif()
 
 if(NOT WIN32)
@@ -30,7 +31,7 @@ find_package(fmt REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Threads REQUIRED)
 find_package(CUDAToolkit REQUIRED)
-find_package(Torch REQUIRED)
+# find_package(Torch REQUIRED)
 find_package(Qhull REQUIRED) #v8.0.2
 find_package(PCL REQUIRED)
 find_package(CGAL REQUIRED)
@@ -88,6 +89,8 @@ option(BUILD_UNIT_TESTS "Build Unit Tests" ON)
 if(BUILD_UNIT_TESTS)
   add_subdirectory(test) 
 endif()
+
+# add_definitions(-DEIGEN_USE_MKL_ALL)
 
 add_subdirectory(utility)
 add_subdirectory(thirdparty)

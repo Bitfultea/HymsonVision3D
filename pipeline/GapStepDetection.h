@@ -1,0 +1,47 @@
+#include "3D/PointCloud.h"
+#include "Normal.h"
+
+namespace hymson3d {
+namespace pipeline {
+class GapStepDetection {
+    typedef std::vector<std::pair<Eigen::Vector2d, Eigen::Vector2d>>
+            lineSegments;
+
+public:
+    static void detect_gap_step(std::shared_ptr<geometry::PointCloud> cloud,
+                                Eigen::Vector3d transformation_matrix,
+                                bool debug_mode);
+
+    static void slice_along_y(geometry::PointCloud::Ptr cloud,
+                              Eigen::Vector3d transformation_matrix);
+
+    static void bspline_interpolation(geometry::PointCloud::Ptr cloud,
+                                      double height_threshold,
+                                      lineSegments& corners,
+                                      bool debug_mode);
+    static void calculate_gap_step(lineSegments& corners,
+                                   double& gap_step,
+                                   double& step_width);
+
+private:
+    static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(
+            std::vector<Eigen::Vector2d>& sampled_pts);
+    static std::vector<std::vector<Eigen::Vector2d>> statistics_filter(
+            std::vector<std::vector<Eigen::Vector2d>>& clusters);
+    static void plot_clusters(
+            std::vector<Eigen::Vector2d>& resampled_pts,
+            std::vector<std::vector<Eigen::Vector2d>>& clusters,
+            lineSegments& line_segs,
+            std::vector<std::vector<Eigen::Vector2d>> intersections,
+            int img_id);
+    static lineSegments line_segment(
+            std::vector<std::vector<Eigen::Vector2d>>& pt_groups);
+    static void compute_step_width(
+            std::vector<Eigen::Vector2d>& resampled_pts,
+            lineSegments& line_segs,
+            std::vector<std::vector<Eigen::Vector2d>>& intersections,
+            double height_threshold);
+};
+
+}  // namespace pipeline
+}  // namespace hymson3d

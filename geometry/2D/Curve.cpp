@@ -142,8 +142,8 @@ Eigen::VectorXd BSpline::interpolate(const Eigen::VectorXd& u) {
             idx = 0;  // 如果 u[i] 小于 xx[0]，则使用最左边的值
         }
         if (idx >= xx.size() - 1) {
-            idx = xx.size() -
-                  2;  // 如果 u[i] 大于 xx[xx.size() - 1]，则使用最右边的值
+            // 如果 u[i] 大于 xx[xx.size() - 1]，则使用最右边的值
+            idx = xx.size() - 2;
         }
 
         // 计算 t 并检查是否有除零错误

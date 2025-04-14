@@ -404,6 +404,8 @@ void DefectDetection::detect_pinholes_nva(
     std::shared_ptr<geometry::PointCloud> points =
             std::make_shared<geometry::PointCloud>();
     height_filter(cloud, points, height_threshold);
+    if (debug_mode)
+        utility::write_ply("test_0.ply", points, utility::FileFormat::BINARY);
 
     // 1.1 denoise
     if (denoise) {
@@ -419,8 +421,10 @@ void DefectDetection::detect_pinholes_nva(
     core::feature::orient_normals_towards_positive_z(*points);
 
     // 1.2 cluster
-    int num_clusters =
-            core::Cluster::DBSCANCluster(*points, radius, min_points);
+    // int num_clusters =
+    //         core::Cluster::DBSCANCluster(*points, radius, min_points);
+    int num_clusters = 1;
+    points->labels_ = std::vector<int>(points->points_.size(), 0);
     std::vector<geometry::PointCloud::Ptr> clusters;
     part_separation(points, clusters, num_clusters);
 

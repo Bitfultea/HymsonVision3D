@@ -17,8 +17,13 @@ int main(int argc, char **argv) {
     //     core::converter::tiff_to_pointcloud(argv[1], argv[2], pointcloud,
     //                                         Eigen::Vector3d(0.01, 0.03,
     //                                         0.001), true);
-    core::converter::tiff_to_pointcloud(
-            argv[1], pointcloud, Eigen::Vector3d(0.01, 0.03, 0.001), true);
+    //     core::converter::tiff_to_pointcloud(
+    //             argv[1], pointcloud, Eigen::Vector3d(0.01, 0.03, 0.001),
+    //             true);
+    core::converter::tiff_to_pointcloud(argv[1], pointcloud,
+                                        Eigen::Vector3d(0.01, 0.03, 0.1), true);
+    //     core::converter::tiff_to_pointcloud(argv[1], pointcloud,
+    //                                         Eigen::Vector3d(1, 1, 1), true);
 
     //     geometry::HymsonMesh mesh;
     //     mesh.construct_mesh(pointcloud);
@@ -34,10 +39,10 @@ int main(int argc, char **argv) {
     float rcorner_normal_degree = 1.0;
     float rcorner_curvature_threshold = 0.05;
     geometry::KDTreeSearchParamRadius param(0.08);
-    float ratio_x = 0.4;
+    float ratio_x = 0.5;
     float ratio_y = 0.4;
-    double dist_x = 1e-4;
-    double dist_y = 1e-4;
+    double dist_x = 1e-5;
+    double dist_y = 1e-6;
     //     pipeline::DefectDetection::detect_defects(
     //             pointcloud, param, long_normal_degree,
     //             long_curvature_threshold, rcorner_normal_degree,
@@ -49,7 +54,10 @@ int main(int argc, char **argv) {
 
     bool denoise = false;
     bool debug_mode = true;
-    Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.01, 0.03, 0.001);
+    //     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.01, 0.03,
+    //     0.001);
+    Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.01, 0.03, 0.5);
+    //     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(1, 1, 1);
     pipeline::DefectDetection::detect_pinholes_nva(
             pointcloud, param, height_threshold, radius, min_points,
             transformation_matrix, ratio_x, ratio_y, dist_x, dist_y, denoise,

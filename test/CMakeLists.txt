@@ -4,16 +4,16 @@ add_executable(LoggerTest
   logger_test.cpp
 )
 
-add_executable(TorchTest
-  test_torch.cpp
-)
+# add_executable(TorchTest
+#   test_torch.cpp
+# )
 
-add_executable(TorchTest2
-  test_torch_2.cpp
-)
+# add_executable(TorchTest2
+#   test_torch_2.cpp
+# )
 
-add_executable(ConvertTiff
-  convert_tiff.cpp)
+# add_executable(ConvertTiff
+#   convert_tiff.cpp)
 
 add_executable(
   CGAL_test
@@ -96,23 +96,23 @@ target_link_libraries(
   utility_lib
 )
 
-target_link_libraries(
-  TorchTest
-  "${TORCH_LIBRARIES}"
-)
+# target_link_libraries(
+#   TorchTest
+#   "${TORCH_LIBRARIES}"
+# )
 
-target_link_libraries(
-  TorchTest2
-  "${TORCH_LIBRARIES}"
-)
+# target_link_libraries(
+#   TorchTest2
+#   "${TORCH_LIBRARIES}"
+# )
 
-target_link_libraries(
-  ConvertTiff
-  core_lib
-  geometry_3d_lib
-  utility_lib
-  thirdparty_lib
-  )
+# target_link_libraries(
+#   ConvertTiff
+#   core_lib
+#   geometry_3d_lib
+#   utility_lib
+#   thirdparty_lib
+#   )
 
 include(GoogleTest)
 gtest_discover_tests(testGoogleTest)
