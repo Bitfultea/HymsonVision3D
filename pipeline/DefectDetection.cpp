@@ -555,7 +555,7 @@ std::shared_ptr<geometry::PointCloud> DefectDetection::FPFH_NVA(
     if (use_fpfh) {
         Eigen::MatrixXf fpfh_data = core::feature::compute_fpfh(*cloud);
 #pragma omp parallel for
-        for (size_t i = 0; i < fpfh_data.rows(); i++) {
+        for (int i = 0; i < fpfh_data.rows(); i++) {
             if (std::min(abs(fpfh_data(i, 27) - fpfh_data(i, 26)),
                          abs(fpfh_data(i, 28) - fpfh_data(i, 27))) < 60) {
                 fpfh_marker[i] = 1;
@@ -572,7 +572,7 @@ std::shared_ptr<geometry::PointCloud> DefectDetection::FPFH_NVA(
     kdtree_y.SetData(*cloud_y);
     std::vector<int> marker_y(cloud_y->points_.size(), 0);
 #pragma omp parallel for
-    for (size_t i = 0; i < cloud_y->points_.size(); i++) {
+    for (int i = 0; i < cloud_y->points_.size(); i++) {
         std::vector<int> neightbor_idx;
         std::vector<double> dis_y;
         kdtree_y.Search(cloud_y->points_[i], param, neightbor_idx, dis_y);
@@ -589,7 +589,7 @@ std::shared_ptr<geometry::PointCloud> DefectDetection::FPFH_NVA(
     std::vector<int> marker_x(cloud_x->points_.size(), 0);
 
 #pragma omp parallel for
-    for (size_t i = 0; i < cloud_x->points_.size(); i++) {
+    for (int i = 0; i < cloud_x->points_.size(); i++) {
         std::vector<int> neightbor_idx;
         std::vector<double> dis_x;
         kdtree_x.Search(cloud_x->points_[i], param, neightbor_idx, dis_x);

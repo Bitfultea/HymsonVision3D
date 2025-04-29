@@ -30,3 +30,6 @@ else()
         geometry_2d_lib
         )
 endif()
+
+set_target_properties(core_lib PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})

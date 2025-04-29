@@ -35,6 +35,7 @@ class VoxelGrid;
 /// colors and point normals.
 class PointCloud : public Geometry3D {
 public:
+    typedef std::shared_ptr<PointCloud> Ptr;
     /// \brief Default Constructor.
     PointCloud() : Geometry3D(Geometry::GeometryType::PointCloud) {}
     /// \brief Parameterized Constructor.

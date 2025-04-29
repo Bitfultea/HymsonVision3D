@@ -1,6 +1,6 @@
 #include <opencv2/opencv.hpp>
 #include <string>
-
+#include "fmtfallback.h"
 #include "CalibCamera.h"
 #include "CameraCalib.h"
 #include "FileSystem.h"

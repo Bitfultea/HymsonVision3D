@@ -2,6 +2,7 @@
 
 #include "CameraCalib.h"
 #include "FileSystem.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace pipeline {

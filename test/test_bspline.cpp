@@ -11,6 +11,7 @@
 #include "MathTool.h"
 #include "Normal.h"
 #include "PlaneDetection.h"
+#include "fmtfallback.h"
 
 using namespace hymson3d;
 int main(int argc, char **argv) {

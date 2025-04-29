@@ -2,7 +2,7 @@
 #pragma once
 
 #include <pcl/point_types.h>
-
+#include "fmtfallback.h"
 #include "2D/Image.h"
 #include "3D/PointCloud.h"
 #include "FileTool.h"

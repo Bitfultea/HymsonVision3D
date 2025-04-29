@@ -1,7 +1,7 @@
 #include <CGAL/Simple_cartesian.h>
 
 #include <iostream>
-
+#include "fmtfallback.h"
 typedef CGAL::Simple_cartesian<double> Kernel;
 typedef Kernel::Point_2 Point_2;
 typedef Kernel::Segment_2 Segment_2;

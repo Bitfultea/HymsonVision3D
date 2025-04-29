@@ -1,5 +1,6 @@
 #include "FileSystem.h"
 #include "gtest/gtest.h"
+#include "fmtfallback.h"
 
 namespace {
 TEST(googleTest, BasicAssertions) {

@@ -1,5 +1,6 @@
 #pragma once
 #include "3D/PointCloud.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace pipeline {

@@ -2,6 +2,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <memory>
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace core {

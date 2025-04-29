@@ -165,7 +165,7 @@ void Cluster::RegionGrowingCluster(geometry::PointCloud& cloud,
         int neighbor_count = 0;
         cloud.curvatures_.resize(cloud.points_.size());
 #pragma omp parallel for
-        for (size_t i = 0; i < cloud.normals_.size(); i++) {
+        for (int i = 0; i < cloud.normals_.size(); i++) {
             std::vector<int> neighbors;
             std::vector<double> dists2;
             kdtree.SearchRadius(cloud.points_[i], radius, neighbors, dists2);

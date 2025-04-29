@@ -227,7 +227,8 @@ bool DirectoryIsEmpty(const std::string &directory) {
 }
 
 bool MakeDirectory(const std::string &directory) {
-#ifdef WINDOWS
+//#ifdef WINDOWS
+#ifdef _WIN32
     return (_mkdir(directory.c_str()) == 0);
 #else
     return (mkdir(directory.c_str(), S_IRWXU) == 0);

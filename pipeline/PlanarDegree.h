@@ -2,6 +2,7 @@
 
 #include "Normal.h"
 #include "PlaneDetection.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace pipeline {

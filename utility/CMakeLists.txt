@@ -11,8 +11,11 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(utility_lib 
     spdlog::spdlog 
     fmt::fmt 
-    stdc++fs 
+     
     Eigen3::Eigen
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}
     )
+
+set_target_properties(utility_lib PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})

@@ -1,5 +1,5 @@
 #include "Logger.h"
-
+#include "fmtfallback.h"
 int main() {
     LOG_INFO("hello world");
     LOG_DEBUG("This a looger test {}", 10086);

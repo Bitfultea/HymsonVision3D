@@ -1,6 +1,6 @@
 #pragma once
 #include <random>
-
+#include "fmtfallback.h"
 #include "3D/KDtree.h"
 #include "3D/PointCloud.h"
 
@@ -48,7 +48,7 @@ private:
         }
         cloud.colors_.resize(cloud.points_.size());
 #pragma omp parallel for
-        for (size_t i = 0; i < cloud.points_.size(); i++) {
+        for (int i = 0; i < cloud.points_.size(); i++) {
             if (cloud.labels_[i] >= 0)
                 cloud.colors_[i] = cluster_colors[cloud.labels_[i]];
         }

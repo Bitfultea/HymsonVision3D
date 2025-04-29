@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <vector>
-
+#include "fmtfallback.h"
 #include "3D/PointCloud.h"
 #include "Hash.h"
 

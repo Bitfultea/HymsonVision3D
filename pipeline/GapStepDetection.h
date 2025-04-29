@@ -1,5 +1,6 @@
 #include "3D/PointCloud.h"
 #include "Normal.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace pipeline {
@@ -10,6 +11,17 @@ class GapStepDetection {
 public:
     static void detect_gap_step(std::shared_ptr<geometry::PointCloud> cloud,
                                 Eigen::Vector3d transformation_matrix,
+                                bool debug_mode);
+    static void detect_gap_step_dll(std::shared_ptr<geometry::PointCloud> cloud,
+                                    Eigen::Vector3d transformation_matrix,
+                                    double& gap_step,
+                                    double& step_width,
+                                    bool debug_mode);
+    static void detect_gap_step_dll_plot(std::shared_ptr<geometry::PointCloud> cloud,
+                                Eigen::Vector3d transformation_matrix,
+                                double& gap_step,
+                                double& step_width,
+                                std::vector<std::vector<double>>& temp_res,
                                 bool debug_mode);
 
     static void slice_along_y(geometry::PointCloud::Ptr cloud,
@@ -22,6 +34,10 @@ public:
     static void calculate_gap_step(lineSegments& corners,
                                    double& gap_step,
                                    double& step_width);
+    static void calculate_gap_step_dll_plot(lineSegments& corners,
+                                   double& gap_step,
+                                   double& step_width,
+                                   std::vector<std::vector<double>>& temp_res);
 
 private:
     static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(

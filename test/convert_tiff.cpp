@@ -1,6 +1,7 @@
 #include "Converter.h"
 #include "FileTool.h"
 #include "Logger.h"
+#include "fmtfallback.h"
 
 using namespace hymson3d;
 int main() {

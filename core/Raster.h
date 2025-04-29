@@ -1,6 +1,6 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
-
+#include "fmtfallback.h"
 #include "3D/PointCloud.h"
 #include "Camera.h"
 

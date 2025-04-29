@@ -8,6 +8,7 @@
 #include "BoundingVolume.h"
 #include "Logging.h"
 #include "TriangleMesh.h"
+#include <pcl/pcl_macros.h>
 
 namespace open3d {
 namespace geometry {

@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
+#include "PointCloud.h"
 #include "Helper.h"
 #include "Image.h"
 #include "MeshBase.h"
@@ -473,19 +473,19 @@ public:
     /// Should have same size as \ref vertices_.
     void RemoveVerticesByMask(const std::vector<bool> &vertex_mask);
 
-    /// \brief This function deforms the mesh using the method by
-    /// Sorkine and Alexa, "As-Rigid-As-Possible Surface Modeling", 2007.
-    ///
-    /// \param constraint_vertex_indices Indices of the triangle vertices that
-    /// should be constrained by the vertex positions in
-    /// constraint_vertex_positions.
-    /// \param constraint_vertex_positions Vertex positions used for the
-    /// constraints.
-    /// \param max_iter maximum number of iterations to minimize energy
-    /// functional.
-    /// \param energy energy model that should be optimized
-    /// \param smoothed_alpha alpha parameter of the smoothed ARAP model
-    /// \return The deformed TriangleMesh
+    /* \brief This function deforms the mesh using the method by
+     Sorkine and Alexa, "As-Rigid-As-Possible Surface Modeling", 2007.
+    
+     \param constraint_vertex_indices Indices of the triangle vertices that
+     should be constrained by the vertex positions in
+     constraint_vertex_positions.
+     \param constraint_vertex_positions Vertex positions used for the
+     constraints.
+     \param max_iter maximum number of iterations to minimize energy
+     functional.
+     \param energy energy model that should be optimized
+     \param smoothed_alpha alpha parameter of the smoothed ARAP model
+     \return The deformed TriangleMesh*/
     std::shared_ptr<TriangleMesh> DeformAsRigidAsPossible(
             const std::vector<int> &constraint_vertex_indices,
             const std::vector<Eigen::Vector3d> &constraint_vertex_positions,
@@ -551,9 +551,9 @@ public:
     /// can be used to to trim the mesh.
     static std::tuple<std::shared_ptr<TriangleMesh>, std::vector<double>>
     CreateFromPointCloudPoisson(const PointCloud &pcd,
-                                size_t depth = 8,
-                                float width = 0.0f,
-                                float scale = 1.1f,
+                                size_t depth,
+                                float width ,
+                                float scale ,
                                 bool linear_fit = false,
                                 int n_threads = -1);
 

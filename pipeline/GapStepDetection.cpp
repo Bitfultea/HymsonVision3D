@@ -22,25 +22,90 @@ void GapStepDetection::detect_gap_step(
     if (debug_mode) {
         utility::filesystem::MakeDirectory("./bspline");
     }
+    std::cout << "1" << std::endl;
 
-    LOG_DEBUG("Slice along Y-axis");
+    //LOG_DEBUG("Slice along Y-axis");
     // slice along y axis
     slice_along_y(cloud, transformation_matrix);
+    std::cout << "2" << std::endl;
 
     // bspline interpolation
     double height_threshold = 0.01;
     lineSegments corners;
     bspline_interpolation(cloud, height_threshold, corners, debug_mode);
+    std::cout << "3" << std::endl;
 
     // calculate the gap step result
     double gap_step = 0.0, step_width = 0.0;
     calculate_gap_step(corners, gap_step, step_width);
+    std::cout << "4" << std::endl;
 }
+
+void GapStepDetection::detect_gap_step_dll(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        Eigen::Vector3d transformation_matrix,
+        double& gap_step,
+        double& step_width,
+        bool debug_mode) {
+    // debug mode
+    if (debug_mode) {
+        utility::filesystem::MakeDirectory("./bspline");
+    }
+    // std::cout << "1" << std::endl;
+
+    // LOG_DEBUG("Slice along Y-axis");
+    //  slice along y axis
+    slice_along_y(cloud, transformation_matrix);
+    // std::cout << "2" << std::endl;
+
+    // bspline interpolation
+    double height_threshold = 0.01;
+    lineSegments corners;
+    bspline_interpolation(cloud, height_threshold, corners, debug_mode);
+    // std::cout << "3" << std::endl;
+
+    // calculate the gap step result
+    // double gap_step = 0.0, step_width = 0.0;
+    calculate_gap_step(corners, gap_step, step_width);
+    // std::cout << "4" << std::endl;
+}
+
+void GapStepDetection::detect_gap_step_dll_plot(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        Eigen::Vector3d transformation_matrix,
+        double& gap_step,
+        double& step_width,
+        std::vector<std::vector<double>>& temp_res,
+        bool debug_mode) {
+    // debug mode
+    if (debug_mode) {
+        utility::filesystem::MakeDirectory("./bspline");
+    }
+    //std::cout << "1" << std::endl;
+
+    // LOG_DEBUG("Slice along Y-axis");
+    //  slice along y axis
+    slice_along_y(cloud, transformation_matrix);
+    //std::cout << "2" << std::endl;
+
+    // bspline interpolation
+    double height_threshold = 0.01;
+    lineSegments corners;
+    bspline_interpolation(cloud, height_threshold, corners, debug_mode);
+    //std::cout << "3" << std::endl;
+
+    // calculate the gap step result
+    //double gap_step = 0.0, step_width = 0.0;
+    calculate_gap_step_dll_plot(corners, gap_step, step_width, temp_res);
+    //std::cout << "4" << std::endl;
+}
+
 
 void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
                                      Eigen::Vector3d transformation_matrix) {
     bool has_normals = cloud->HasNormals();
-
+    //std::cout << transformation_matrix << std::endl;
+    //std::cout << "has points: " << cloud->points_.size() << std::endl; 
     if (has_normals) {
         Eigen::Vector3d min_bound = cloud->GetMinBound();
         Eigen::Vector3d max_bound = cloud->GetMaxBound();
@@ -445,12 +510,56 @@ void GapStepDetection::calculate_gap_step(lineSegments& corners,
                                           double& step_width) {
     double sum_width = 0.0;
     double sum_height = 0.0;
+    int exception_count = 0;
     for (int i = 0; i < corners.size(); i++) {
-        sum_width += abs(corners[i].second.x() - corners[i].first.x());
-        sum_height += abs(corners[i].second.y() - corners[i].first.y());
+        double temp_x = abs(corners[i].second.x() - corners[i].first.x());
+        double temp_y = abs(corners[i].second.y() - corners[i].first.y());
+        // exception 
+        if (temp_x > 100 || temp_y > 100) {
+            exception_count++;
+            continue;
+        }
+
+        sum_width += temp_x;
+        sum_height += temp_y;
+        // std::cout << i <<" " << corners[i].second.x() - corners[i].first.x() << " "<<corners[i].second.y() - corners[i].first.y()<<std::endl;
     }
-    gap_step = sum_width / corners.size();
-    step_width = sum_height / corners.size();
+    gap_step = sum_width / (corners.size()-exception_count);
+    step_width = sum_height / (corners.size()-exception_count);
+    //std::cout<< corners.size()<<std::endl;
+    //std::cout<<sum_width<<std::endl;
+    //std::cout<<sum_height<<std::endl;
+    LOG_INFO("gap step: {} step width: {}", gap_step, step_width);
+}
+
+void GapStepDetection::calculate_gap_step_dll_plot(lineSegments& corners,
+                                          double& gap_step,
+                                          double& step_width, 
+                                          std::vector<std::vector<double>>& temp_res) {
+    temp_res.resize(2);
+    double sum_width = 0.0;
+    double sum_height = 0.0;
+    int exception_count = 0;
+    for (int i = 0; i < corners.size(); i++) {
+        double temp_x = abs(corners[i].second.x() - corners[i].first.x());
+        double temp_y = abs(corners[i].second.y() - corners[i].first.y());
+        // exception
+        if (temp_x > 100 || temp_y > 100) {
+            exception_count++;
+            continue;
+        }
+        temp_res[0].emplace_back(temp_x);
+        temp_res[1].emplace_back(temp_y);
+        sum_width += temp_x;
+        sum_height += temp_y;
+        // std::cout << i <<" " << corners[i].second.x() - corners[i].first.x()
+        // << " "<<corners[i].second.y() - corners[i].first.y()<<std::endl;
+    }
+    gap_step = sum_width / (corners.size() - exception_count);
+    step_width = sum_height / (corners.size() - exception_count);
+    // std::cout<< corners.size()<<std::endl;
+    // std::cout<<sum_width<<std::endl;
+    // std::cout<<sum_height<<std::endl;
     LOG_INFO("gap step: {} step width: {}", gap_step, step_width);
 }
 

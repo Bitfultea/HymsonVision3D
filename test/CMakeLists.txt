@@ -3,56 +3,50 @@ add_executable(LoggerTest
   # ${UNITTEST_HEADER}
   logger_test.cpp
 )
-
-# add_executable(TorchTest
-#   test_torch.cpp
-# )
-
-# add_executable(TorchTest2
-#   test_torch_2.cpp
-# )
-
-# add_executable(ConvertTiff
-#   convert_tiff.cpp)
-
+set_target_properties(LoggerTest PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+add_executable(TorchTest
+  test_torch.cpp
+)
+set_target_properties(TorchTest PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+add_executable(TorchTest2
+  test_torch_2.cpp
+)
+set_target_properties(TorchTest2 PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+add_executable(ConvertTiff
+  convert_tiff.cpp)
+set_target_properties(ConvertTiff PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 add_executable(
   CGAL_test
   test_CGAL.cpp
 )
-
+set_target_properties(CGAL_test PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 add_executable(
   planar_test
   test_plane.cpp
 )
-
+set_target_properties(planar_test PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 add_executable(
   def_test
   test_defect.cpp
 )
-
+set_target_properties(def_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 add_executable(
   calib_test
   test_calib.cpp
 )
-
-add_executable(
-  def_test_2
-  test_bspline.cpp
-)
-
+set_target_properties(calib_test PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 enable_testing()
 
-add_executable(testGoogleTest
-  google_test_sample.cpp
-)
 
-target_link_libraries(
-  testGoogleTest
-  gtest
-  gmock
-  gtest_main
-  utility_lib
-)
+
+
 
 target_link_libraries(
   planar_test
@@ -79,16 +73,6 @@ target_link_libraries(
   pipeline
   core_lib
 )
-
-target_link_libraries(
-  def_test_2
-  utility_lib
-  core_lib
-  geometry_3d_lib
-  pipeline
-  core_lib
-)
-
 
 
 target_link_libraries(
@@ -96,23 +80,21 @@ target_link_libraries(
   utility_lib
 )
 
-# target_link_libraries(
-#   TorchTest
-#   "${TORCH_LIBRARIES}"
-# )
+target_link_libraries(
+  TorchTest
+  "${TORCH_LIBRARIES}"
+)
 
-# target_link_libraries(
-#   TorchTest2
-#   "${TORCH_LIBRARIES}"
-# )
+target_link_libraries(
+  TorchTest2
+  "${TORCH_LIBRARIES}"
+)
 
-# target_link_libraries(
-#   ConvertTiff
-#   core_lib
-#   geometry_3d_lib
-#   utility_lib
-#   thirdparty_lib
-#   )
+target_link_libraries(
+  ConvertTiff
+  core_lib
+  geometry_3d_lib
+  utility_lib
+  thirdparty_lib
+  )
 
-include(GoogleTest)
-gtest_discover_tests(testGoogleTest)

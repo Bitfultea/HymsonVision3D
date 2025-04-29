@@ -6,3 +6,6 @@ thirdparty/libtorch/*
 cmake-build-*
 .idea/
 *.ply
+/out/build/x64-Debug
+/build-back
+/.vs

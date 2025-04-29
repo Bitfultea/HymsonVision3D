@@ -3,13 +3,13 @@
 #include <torch/version.h>
 
 #include <iostream>
-
+#include "fmtfallback.h"
 // 将 SM 版本转换为核心数的辅助函数
 int _ConvertSMVer2Cores(int major, int minor);
 
 int main() {
     // 版本信息
-    std::cout << "LibTorch 版本：" << TORCH_VERSION << std::endl;
+    std::cout << "LibTorch 版本:" << TORCH_VERSION << std::endl;
 
     // 检查是否支持CUDA
     if (torch::cuda::is_available()) {
@@ -20,7 +20,7 @@ int main() {
 
         int device_count = torch::cuda::device_count();
         // cudaGetDeviceCount(&device_count);
-        std::cout << "CUDA 设备数量：" << device_count << std::endl;
+        std::cout << "CUDA 设备数量:" << device_count << std::endl;
 
         for (int i = 0; i < device_count; ++i) {
             cudaDeviceProp prop;
@@ -28,34 +28,34 @@ int main() {
             std::cout << "设备 " << i << ": " << prop.name << std::endl;
             std::cout << "  总内存：" << prop.totalGlobalMem / (1024 * 1024)
                       << " MB" << std::endl;
-            std::cout << "  多处理器：" << prop.multiProcessorCount
+            std::cout << "  多处理器:" << prop.multiProcessorCount
                       << std::endl;
-            std::cout << "  CUDA 核心："
+            std::cout << "  CUDA 核心:"
                       << prop.multiProcessorCount *
                                  _ConvertSMVer2Cores(prop.major, prop.minor)
                       << std::endl;
-            std::cout << "  CUDA 算力：" << prop.major << "." << prop.minor
+            std::cout << "  CUDA 算力:" << prop.major << "." << prop.minor
                       << std::endl;
         }
     } else {
-        std::cout << "CUDA 不可用。正在使用 CPU。" << std::endl;
+        std::cout << "CUDA 不可用,正在使用 CPU." << std::endl;
     }
 
     // 创建张量
     torch::Tensor tensor = torch::rand({2, 3});
-    std::cout << "随机张量：" << tensor << std::endl;
+    std::cout << "随机张量:" << tensor << std::endl;
 
     // 基本运算
     torch::Tensor tensor_a = torch::tensor({1, 2, 3}, torch::kFloat32);
     torch::Tensor tensor_b = torch::tensor({4, 5, 6}, torch::kFloat32);
     torch::Tensor result = tensor_a + tensor_b;
-    std::cout << "张量添加：" << result << std::endl;
+    std::cout << "张量添加:" << result << std::endl;
 
     // 自动求导
     torch::Tensor x = torch::tensor({1.0, 2.0, 3.0}, torch::requires_grad());
     torch::Tensor y = x * 2;
     y.backward(torch::ones_like(y));
-    std::cout << "坡度：" << x.grad() << std::endl;
+    std::cout << "坡度:" << x.grad() << std::endl;
 
     // 简单的线性回归模型
     struct Model : torch::nn::Module {
@@ -92,10 +92,10 @@ int main() {
     if (torch::cuda::is_available()) {
         torch::Tensor tensor_cuda =
                 torch::rand({2, 3}, torch::device(torch::kCUDA));
-        std::cout << "CUDA 上的随机张量：" << tensor_cuda << std::endl;
+        std::cout << "CUDA 上的随机张量:" << tensor_cuda << std::endl;
 
         torch::Tensor result_cuda = tensor_cuda * 2;
-        std::cout << "CUDA 上的张量乘法：" << result_cuda << std::endl;
+        std::cout << "CUDA 上的张量乘法:" << result_cuda << std::endl;
     }
 
     return 0;

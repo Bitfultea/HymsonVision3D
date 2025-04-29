@@ -1,5 +1,5 @@
 #include <Eigen/Sparse>
-
+#include "fmtfallback.h"
 #include "3D/KDtree.h"
 #include "3D/PointCloud.h"
 

@@ -45,7 +45,7 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
     if (!use_z_buffer) {
 #pragma omp parallel for
         // no z buffer normally for z upper rthographic projection
-        for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+        for (int i = 0; i < pointcloud->points_.size(); ++i) {
             // use homogeneous coordinate
             Eigen::Vector4d point3D(pointcloud->points_[i].x(),
                                     pointcloud->points_[i].y(),
@@ -67,7 +67,7 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
     } else {
 #pragma omp parallel for
         // use z buffer but still only consider orthographic projection
-        for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+        for (int i = 0; i < pointcloud->points_.size(); ++i) {
             Eigen::Vector4d point3D(pointcloud->points_[i].x(),
                                     pointcloud->points_[i].y(),
                                     pointcloud->points_[i].z(), 1.0);
@@ -101,7 +101,7 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
         case Mode::AVE:
 #pragma omp parallel for
             // use z buffer but still only consider orthographic projection
-            for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+            for (int i = 0; i < pointcloud->points_.size(); ++i) {
                 Eigen::Vector4d point3D(pointcloud->points_[i].x(),
                                         pointcloud->points_[i].y(),
                                         pointcloud->points_[i].z(), 1.0);
@@ -122,7 +122,7 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
         case Mode::FAR:
 #pragma omp parallel for
             // use z buffer but still only consider orthographic projection
-            for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+            for (int i = 0; i < pointcloud->points_.size(); ++i) {
                 Eigen::Vector4d point3D(pointcloud->points_[i].x(),
                                         pointcloud->points_[i].y(),
                                         pointcloud->points_[i].z(), 1.0);
@@ -144,7 +144,7 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
         case Mode::NEAREST:
 #pragma omp parallel for
             // use z buffer but still only consider orthographic projection
-            for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+            for (int i = 0; i < pointcloud->points_.size(); ++i) {
                 Eigen::Vector4d point3D(pointcloud->points_[i].x(),
                                         pointcloud->points_[i].y(),
                                         pointcloud->points_[i].z(), 1.0);
@@ -166,7 +166,7 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
         case Mode::SUM:
 #pragma omp parallel for
             // use z buffer but still only consider orthographic projection
-            for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+            for (int i = 0; i < pointcloud->points_.size(); ++i) {
                 Eigen::Vector4d point3D(pointcloud->points_[i].x(),
                                         pointcloud->points_[i].y(),
                                         pointcloud->points_[i].z(), 1.0);
@@ -196,7 +196,7 @@ cv::Mat PointCloudRaster::simple_projection(
     Eigen::Vector3d extent = max_bound - min_bound;
 
 #pragma omp parallel for
-    for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+    for (int i = 0; i < pointcloud->points_.size(); ++i) {
         Eigen::Vector3d pt = pointcloud->points_[i] - min_bound;
         int u = std::round(pt.x() / extent.x() * frame_width_);
         int v = std::round(pt.y() / extent.y() * frame_height_);
@@ -215,7 +215,7 @@ cv::Mat PointCloudRaster::simple_projection_x(
     Eigen::Vector3d extent = max_bound - min_bound;
 
 #pragma omp parallel for
-    for (size_t i = 0; i < pointcloud->points_.size(); ++i) {
+    for (int i = 0; i < pointcloud->points_.size(); ++i) {
         Eigen::Vector3d pt = pointcloud->points_[i] - min_bound;
         int u = std::round(pt.y() / extent.y() * frame_width_);
         int v = std::round(pt.z() / extent.z() * frame_height_);

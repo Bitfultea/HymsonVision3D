@@ -1,13 +1,16 @@
+set(CMAKE_TOOLCHAIN_FILE "D:/vcpkg/vcpkg-master/scripts/buildsystems/vcpkg.cmake")
 cmake_minimum_required( VERSION 3.10 )
-
+# 仅在 Windows 平台全局禁用 fmt 的编译期检查
+if (WIN32)
+  add_compile_definitions(FMT_ENFORCE_COMPILE_CHECK=0)
+endif()
 project( HymsonVisionProject )
 
 set(CMAKE_BUILD_TYPE Release) # Release,RelWithDebInfo,MinSizeRel,Debug
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -march=native -O3 -ftree-vectorize -pthread -fopenmp"
-  ) # use google sanitizer
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -fsanitize=address") # use google sanitizer
 else()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -march=native -fopenmp")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} ")
 endif()
 
 if(NOT WIN32)
@@ -17,10 +20,23 @@ endif ()
 set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
+set(vcpkg_root_dir "D:/vcpkg/vcpkg-master/packages")
+set(vcpkg_include_dir "D:/vcpkg/vcpkg-master/installed/x64-windows/include")
+set(vcpkg_lib_dir "D:/vcpkg/vcpkg-master/installed/x64-windows/lib")
+set(CMAKE_CUDA_COMPILER "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/bin/nvcc")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/share/cmake/Torch")
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/share/cmake/Torch")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/opencv-4.8.0/build")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "D:/software/opencv-4.8.0/build")
+set(exe_path "${CMAKE_CURRENT_SOURCE_DIR}/build/exe")
 
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/spdlog_x64-windows/share/spdlog")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/eigen3_x64-windows/share/eigen3")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/pcl_x64-windows/share/pcl")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/nanoflann_x64-windows/share/nanoflann")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/flann_x64-windows/share/flann")
 message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 
 # find the necessary packages 
@@ -30,23 +46,27 @@ find_package(Eigen3 REQUIRED)
 find_package(fmt REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Threads REQUIRED)
+find_package(Qhull REQUIRED)
 find_package(CUDAToolkit REQUIRED)
-# find_package(Torch REQUIRED)
-find_package(Qhull REQUIRED) #v8.0.2
+find_package(Torch REQUIRED)
 find_package(PCL REQUIRED)
 find_package(CGAL REQUIRED)
 find_package(nanoflann REQUIRED)
+find_package(boost REQUIRED)
+
+#find_package(Open3D REQUIRED)
+#find_package(lz4 CONFIG REQUIRED)
 
 
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
-)
+#include(FetchContent)
+#FetchContent_Declare(
+  #googletest
+  #URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
+#)
 
 # For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+#set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+#FetchContent_MakeAvailable(googletest)
 
 
 set(INCLUDE_DIRS
@@ -55,12 +75,20 @@ set(INCLUDE_DIRS
   ${PROJECT_SOURCE_DIR}/core
   ${PROJECT_SOURCE_DIR}/thirdparty
   ${PROJECT_SOURCE_DIR}/pipeline
+  "'D:/software/opencv-4.8.0/build/include"
+  ${vcpkg_include_dir}
+  "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
+  ${PROJECT_SOURCE_DIR}/thirdparty/CGAL-5.6.2/auxiliary/gmp/include
 )
 
 include_directories(${INCLUDE_DIRS})
 include_directories(${gtest_SOURCE_DIR}/include )
 include_directories(${CGAL_INCLUDE_DIRS})
-
+#include_directories("${vcpkg_root_dir}/fmt_x64-windows/include")
+#include_directories("${vcpkg_root_dir}/qhull_x64-windows/include")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/open3d")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/include/torch/csrc/api/include")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/include")
 # OS specific settings
 if(WIN32)
     # Windows defaults to hidden symbol visibility, override that
@@ -90,12 +118,9 @@ if(BUILD_UNIT_TESTS)
   add_subdirectory(test) 
 endif()
 
-# add_definitions(-DEIGEN_USE_MKL_ALL)
-
 add_subdirectory(utility)
 add_subdirectory(thirdparty)
 add_subdirectory(core)
 add_subdirectory(geometry)
 add_subdirectory(pipeline)
-
 

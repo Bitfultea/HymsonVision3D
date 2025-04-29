@@ -175,7 +175,7 @@ void tiff_to_pointcloud(const std::string& tiff_path,
 #pragma omp parallel for
         for (int i = 0; i < tiff_image.rows; ++i) {
             const float* row_ptr = tiff_image.ptr<float>(i);
-            const __uint8_t* int_row_ptr = intensity_map.ptr<__uint8_t>(i);
+            const uint8_t* int_row_ptr = intensity_map.ptr<uint8_t>(i);
             double y = i * ratio.y();
             for (int j = 0; j < tiff_image.cols; ++j) {
                 double x = j * ratio.x();
@@ -191,7 +191,7 @@ void tiff_to_pointcloud(const std::string& tiff_path,
         // #pragma omp parallel for
         for (int i = 0; i < tiff_image.rows; ++i) {
             const short* row_ptr = tiff_image.ptr<short>(i);
-            const __uint8_t* int_row_ptr = intensity_map.ptr<__uint8_t>(i);
+            const uint8_t* int_row_ptr = intensity_map.ptr<uint8_t>(i);
             double y = i * ratio.y();
             for (int j = 0; j < tiff_image.cols; ++j) {
                 double x = j * ratio.x();

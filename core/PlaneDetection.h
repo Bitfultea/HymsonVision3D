@@ -1,4 +1,5 @@
 #pragma once
+#include "fmtfallback.h"
 #include "2D/Curve.h"
 #include "3D/Plane.h"
 #include "3D/PointCloud.h"
