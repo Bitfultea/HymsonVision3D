@@ -11,6 +11,7 @@ target_link_libraries(pipeline
     core_lib
     #fmt::fmt
     )
-
-set_target_properties(pipeline PROPERTIES 
+if(WIN32)
+    set_target_properties(pipeline PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()

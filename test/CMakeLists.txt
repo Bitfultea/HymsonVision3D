@@ -3,45 +3,75 @@ add_executable(LoggerTest
   # ${UNITTEST_HEADER}
   logger_test.cpp
 )
+if(WIN32)
 set_target_properties(LoggerTest PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
 add_executable(TorchTest
   test_torch.cpp
 )
-set_target_properties(TorchTest PROPERTIES 
+##########################################################################
+if(WIN32)
+  set_target_properties(TorchTest PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
 add_executable(TorchTest2
   test_torch_2.cpp
 )
-set_target_properties(TorchTest2 PROPERTIES 
+
+if(WIN32)
+  set_target_properties(TorchTest2 PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+##########################################################################
+
 add_executable(ConvertTiff
   convert_tiff.cpp)
-set_target_properties(ConvertTiff PROPERTIES 
+
+if(WIN32)
+  set_target_properties(ConvertTiff PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
 add_executable(
   CGAL_test
   test_CGAL.cpp
 )
+
+##########################################################
+if(WIN32)
 set_target_properties(CGAL_test PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
 add_executable(
   planar_test
   test_plane.cpp
 )
+if(WIN32)
 set_target_properties(planar_test PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
+#########################################################
 add_executable(
   def_test
   test_defect.cpp
 )
+if(WIN32)
 set_target_properties(def_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
+##########################################################
 add_executable(
   calib_test
   test_calib.cpp
 )
+if(WIN32)
 set_target_properties(calib_test PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
 enable_testing()
 
 

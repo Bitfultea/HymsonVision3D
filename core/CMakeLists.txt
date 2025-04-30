@@ -31,5 +31,7 @@ else()
         )
 endif()
 
-set_target_properties(core_lib PROPERTIES 
+if(WIN32)
+    set_target_properties(core_lib PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()

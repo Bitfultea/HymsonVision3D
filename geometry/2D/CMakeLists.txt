@@ -8,5 +8,7 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Link libraries
 target_link_libraries(geometry_2d_lib utility_lib)
-set_target_properties(geometry_2d_lib PROPERTIES 
+if(WIN32)
+    set_target_properties(geometry_2d_lib PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()

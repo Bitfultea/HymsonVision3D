@@ -1,7 +1,7 @@
-set(CMAKE_TOOLCHAIN_FILE "D:/vcpkg/vcpkg-master/scripts/buildsystems/vcpkg.cmake")
 cmake_minimum_required( VERSION 3.10 )
-# ½öÔÚ Windows Æ½Ì¨È«¾Ö½ûÓÃ fmt µÄ±àÒëÆÚ¼ì²é
+# ï¿½ï¿½ï¿½ï¿½ Windows Æ½Ì¨È«ï¿½Ö½ï¿½ï¿½ï¿½ fmt ï¿½Ä±ï¿½ï¿½ï¿½ï¿½Ú¼ï¿½ï¿½
 if (WIN32)
+  set(CMAKE_TOOLCHAIN_FILE "D:/vcpkg/vcpkg-master/scripts/buildsystems/vcpkg.cmake")
   add_compile_definitions(FMT_ENFORCE_COMPILE_CHECK=0)
 endif()
 project( HymsonVisionProject )
@@ -14,29 +14,24 @@ else()
 endif()
 
 if(NOT WIN32)
-    set(CMAKE_CUDA_ARCHITECTURES "86") # rtx 3090
-    set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
-endif ()
+  set(CMAKE_CUDA_ARCHITECTURES "86") # rtx 3090
+  set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
+else ()
+  set(vcpkg_root_dir "D:/vcpkg/vcpkg-master/packages")
+  set(vcpkg_include_dir "D:/vcpkg/vcpkg-master/installed/x64-windows/include")
+  set(vcpkg_lib_dir "D:/vcpkg/vcpkg-master/installed/x64-windows/lib")
+  set(CMAKE_CUDA_COMPILER "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/bin/nvcc")
+  set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "D:/software/opencv-4.8.0/build")
+  set(exe_path "${CMAKE_CURRENT_SOURCE_DIR}/build/exe")
+endif()
+
 set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(vcpkg_root_dir "D:/vcpkg/vcpkg-master/packages")
-set(vcpkg_include_dir "D:/vcpkg/vcpkg-master/installed/x64-windows/include")
-set(vcpkg_lib_dir "D:/vcpkg/vcpkg-master/installed/x64-windows/lib")
-set(CMAKE_CUDA_COMPILER "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/bin/nvcc")
-#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/share/cmake/Torch")
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/share/cmake/Torch")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
-#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/opencv-4.8.0/build")
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "D:/software/opencv-4.8.0/build")
-set(exe_path "${CMAKE_CURRENT_SOURCE_DIR}/build/exe")
 
-#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/spdlog_x64-windows/share/spdlog")
-#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/eigen3_x64-windows/share/eigen3")
-#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/pcl_x64-windows/share/pcl")
-#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/nanoflann_x64-windows/share/nanoflann")
-#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${vcpkg_root_dir}/flann_x64-windows/share/flann")
 message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 
 # find the necessary packages 
@@ -52,7 +47,9 @@ find_package(Torch REQUIRED)
 find_package(PCL REQUIRED)
 find_package(CGAL REQUIRED)
 find_package(nanoflann REQUIRED)
-find_package(boost REQUIRED)
+if(WIN32)
+  find_package(boost REQUIRED)
+endif()
 
 #find_package(Open3D REQUIRED)
 #find_package(lz4 CONFIG REQUIRED)
@@ -68,18 +65,27 @@ find_package(boost REQUIRED)
 #set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 #FetchContent_MakeAvailable(googletest)
 
-
-set(INCLUDE_DIRS
-  ${PROJECT_SOURCE_DIR}/geometry
-  ${PROJECT_SOURCE_DIR}/utility
-  ${PROJECT_SOURCE_DIR}/core
-  ${PROJECT_SOURCE_DIR}/thirdparty
-  ${PROJECT_SOURCE_DIR}/pipeline
-  "'D:/software/opencv-4.8.0/build/include"
-  ${vcpkg_include_dir}
-  "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
-  ${PROJECT_SOURCE_DIR}/thirdparty/CGAL-5.6.2/auxiliary/gmp/include
-)
+if(WIN32)
+  set(INCLUDE_DIRS
+    ${PROJECT_SOURCE_DIR}/geometry
+    ${PROJECT_SOURCE_DIR}/utility
+    ${PROJECT_SOURCE_DIR}/core
+    ${PROJECT_SOURCE_DIR}/thirdparty
+    ${PROJECT_SOURCE_DIR}/pipeline
+    "'D:/software/opencv-4.8.0/build/include"
+    ${vcpkg_include_dir}
+    "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
+    ${PROJECT_SOURCE_DIR}/thirdparty/CGAL-5.6.2/auxiliary/gmp/include
+  )
+elseif(UNIX)
+  set(INCLUDE_DIRS
+    ${PROJECT_SOURCE_DIR}/geometry
+    ${PROJECT_SOURCE_DIR}/utility
+    ${PROJECT_SOURCE_DIR}/core
+    ${PROJECT_SOURCE_DIR}/thirdparty
+    ${PROJECT_SOURCE_DIR}/pipeline
+  )
+endif()
 
 include_directories(${INCLUDE_DIRS})
 include_directories(${gtest_SOURCE_DIR}/include )

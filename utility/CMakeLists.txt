@@ -16,6 +16,7 @@ target_link_libraries(utility_lib
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}
     )
-
-set_target_properties(utility_lib PROPERTIES 
+if(WIN32)
+    set_target_properties(utility_lib PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
