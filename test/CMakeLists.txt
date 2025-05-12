@@ -15,6 +15,7 @@ add_executable(TorchTest
 if(WIN32)
   set_target_properties(TorchTest PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+  target_compile_options(TorchTest PRIVATE "/utf-8")
 endif()
 
 add_executable(TorchTest2
@@ -24,6 +25,7 @@ add_executable(TorchTest2
 if(WIN32)
   set_target_properties(TorchTest2 PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+  target_compile_options(TorchTest2 PRIVATE "/utf-8")
 endif()
 ##########################################################################
 
@@ -43,6 +45,7 @@ add_executable(
 if(WIN32)
 set_target_properties(CGAL_test PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+target_compile_options(CGAL_test PRIVATE "/utf-8")
 endif()
 
 add_executable(
