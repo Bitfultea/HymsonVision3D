@@ -38,7 +38,7 @@ bool DirectoryExists(const std::string &directory);
 bool DirectoryIsEmpty(const std::string &directory);
 
 bool MakeDirectory(const std::string &directory);
-
+bool MakeDirectory_dll(const std::string &directory);
 bool MakeDirectoryHierarchy(const std::string &directory);
 
 bool DeleteDirectory(const std::string &directory);

@@ -234,6 +234,41 @@ bool MakeDirectory(const std::string &directory) {
     return (mkdir(directory.c_str(), S_IRWXU) == 0);
 #endif
 }
+bool MakeDirectory_dll(const std::string &directory) {
+    if (directory.empty()) return false;
+
+    std::string path;
+    path.reserve(directory.size());
+
+    for (size_t i = 0; i < directory.size(); ++i) {
+        char c = directory[i];
+        path += c;
+
+        // 只有在到达一层分隔符或最后一字符时，才尝试 mkdir
+        if (c == '/' || c == '\\' || i + 1 == directory.size()) {
+            // Windows: 跳过 "C:" 和 "C:\" 两种情况
+            if (
+                    // 形如 "X:"
+                    (path.size() == 2 && path[1] == ':') ||
+                    // 或 形如 "X:\" 或 "X:/"
+                    (path.size() == 3 && path[1] == ':' &&
+                     (path[2] == '\\' || path[2] == '/'))) {
+                continue;
+            }
+
+#ifdef _WIN32
+            if (_mkdir(path.c_str()) != 0 && errno != EEXIST) {
+                return false;
+            }
+#else
+            if (mkdir(path.c_str(), S_IRWXU) != 0 && errno != EEXIST) {
+                return false;
+            }
+#endif
+        }
+    }
+    return true;
+}
 
 bool MakeDirectoryHierarchy(const std::string &directory) {
     std::string full_path = GetRegularizedDirectoryName(directory);

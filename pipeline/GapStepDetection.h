@@ -21,7 +21,9 @@ public:
                                 Eigen::Vector3d transformation_matrix,
                                 double& gap_step,
                                 double& step_width,
+                                double& height_threshold,
                                 std::vector<std::vector<double>>& temp_res,
+                                std::string& debug_path,
                                 bool debug_mode);
 
     static void slice_along_y(geometry::PointCloud::Ptr cloud,
@@ -30,6 +32,11 @@ public:
     static void bspline_interpolation(geometry::PointCloud::Ptr cloud,
                                       double height_threshold,
                                       lineSegments& corners,
+                                      bool debug_mode);
+    static void bspline_interpolation_dll(geometry::PointCloud::Ptr cloud,
+                                      double height_threshold,
+                                      lineSegments& corners,
+                                      std::string& debug_path,
                                       bool debug_mode);
     static void calculate_gap_step(lineSegments& corners,
                                    double& gap_step,
@@ -49,6 +56,13 @@ private:
             std::vector<std::vector<Eigen::Vector2d>>& clusters,
             lineSegments& line_segs,
             std::vector<std::vector<Eigen::Vector2d>> intersections,
+            int img_id);
+    static void plot_clusters_dll(
+            std::vector<Eigen::Vector2d>& resampled_pts,
+            std::vector<std::vector<Eigen::Vector2d>>& clusters,
+            lineSegments& line_segs,
+            std::vector<std::vector<Eigen::Vector2d>> intersections,
+            std::string& debug_path,
             int img_id);
     static lineSegments line_segment(
             std::vector<std::vector<Eigen::Vector2d>>& pt_groups);
