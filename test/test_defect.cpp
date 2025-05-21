@@ -1,5 +1,5 @@
 #include <chrono>
-#include "fmtfallback.h"
+
 #include "3D/Mesh.h"
 #include "Cluster.h"
 #include "Converter.h"
@@ -8,6 +8,7 @@
 #include "FileTool.h"
 #include "Logger.h"
 #include "Normal.h"
+#include "fmtfallback.h"
 
 using namespace hymson3d;
 

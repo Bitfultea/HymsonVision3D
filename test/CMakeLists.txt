@@ -75,6 +75,20 @@ if(WIN32)
 set_target_properties(calib_test PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 endif()
+
+
+##########################################################
+add_executable(
+  bspline_test
+  test_bspline.cpp
+)
+if(WIN32)
+set_target_properties(bspline_test PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
+##########################################################
+
 enable_testing()
 
 
@@ -100,6 +114,16 @@ target_link_libraries(
 
 target_link_libraries(
   def_test
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
+  core_lib
+)
+
+
+target_link_libraries(
+  bspline_test
   utility_lib
   core_lib
   geometry_3d_lib
