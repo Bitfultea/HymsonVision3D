@@ -78,8 +78,21 @@ endif()
 enable_testing()
 
 
+add_executable(bspline_test
+  test_bspline.cpp)
 
+if(WIN32)
+  set_target_properties(bspline_test PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
 
+target_link_libraries(
+  bspline_test
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
+)
 
 target_link_libraries(
   planar_test

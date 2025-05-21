@@ -77,6 +77,12 @@ private:
             const std::string logger_name = logger_name_prefix +
                                             std::to_string(date) + "_" +
                                             std::to_string(time);
+ 
+            auto existing_logger = spdlog::get(logger_name);
+            if (existing_logger) {
+                m_logger = existing_logger;
+                return;
+            }
 
             if (console)
                 m_logger = spdlog::stdout_color_st(

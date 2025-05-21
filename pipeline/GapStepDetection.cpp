@@ -97,7 +97,6 @@ void GapStepDetection::detect_gap_step_dll_plot(
     //std::cout << "3" << std::endl;
 
     // calculate the gap step result
-    //double gap_step = 0.0, step_width = 0.0;
     calculate_gap_step_dll_plot(corners, gap_step, step_width, temp_res);
     //std::cout << "4" << std::endl;
 }
@@ -271,6 +270,8 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::group_by_derivative(
         data.at<float>(i, 1) = horiz_pts[i](1);
     }
 
+    // Set K-means random seed
+    cv::theRNG().state = 42;
     // Perform K-means clustering
     cv::Mat labels;
     cv::Mat centers;
@@ -705,7 +706,7 @@ void GapStepDetection::calculate_gap_step_dll_plot(lineSegments& corners,
                                           double& gap_step,
                                           double& step_width, 
                                           std::vector<std::vector<double>>& temp_res) {
-    temp_res.resize(2);
+    //temp_res.resize(2);
     double sum_width = 0.0;
     double sum_height = 0.0;
     int exception_count = 0;
@@ -724,6 +725,8 @@ void GapStepDetection::calculate_gap_step_dll_plot(lineSegments& corners,
         // std::cout << i <<" " << corners[i].second.x() - corners[i].first.x()
         // << " "<<corners[i].second.y() - corners[i].first.y()<<std::endl;
     }
+    //LOG_INFO("exception count: {}, valid corners: {}", exception_count,
+    //         corners.size() - exception_count);
     gap_step = sum_height / (corners.size() - exception_count);
     step_width = sum_width / (corners.size() - exception_count);
     // std::cout<< corners.size()<<std::endl;
