@@ -11,6 +11,7 @@
 #include "Filter.h"
 #include "MathTool.h"
 #include "PlaneDetection.h"
+#include "FileSystem.h"
 
 namespace hymson3d {
 namespace pipeline {
@@ -501,6 +502,7 @@ void DefectDetection::detect_pinholes_nva_dll(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,
         std::vector<geometry::PointCloud::Ptr>& filtered_defects,
+        std::string &debug_path,
         float height_threshold,
         float radius,
         size_t min_points,
@@ -515,8 +517,11 @@ void DefectDetection::detect_pinholes_nva_dll(
     std::shared_ptr<geometry::PointCloud> points =
             std::make_shared<geometry::PointCloud>();
     height_filter(cloud, points, height_threshold);
-    if (debug_mode)
-        utility::write_ply("test_0.ply", points, utility::FileFormat::BINARY);
+    if (debug_mode) {
+        utility::filesystem::MakeDirectory_dll(debug_path);
+        utility::write_ply(debug_path+"test_0.ply", points, utility::FileFormat::BINARY);
+    }
+
 
     // 1.1 denoise
     if (denoise) {
@@ -557,7 +562,7 @@ void DefectDetection::detect_pinholes_nva_dll(
             defect_clouds[i] = defect_cloud;
         }
         if (debug_mode)
-            utility::write_ply("pinhole_nva" + std::to_string(i) + ".ply",
+            utility::write_ply(debug_path + "pinhole_nva" + std::to_string(i) + ".ply",
                                long_clouds[i], utility::FileFormat::BINARY);
     }
 
@@ -601,7 +606,7 @@ void DefectDetection::detect_pinholes_nva_dll(
     }
     if (debug_mode) {
         for (int i = 0; i < filtered_defects.size(); i++)
-            utility::write_ply("defects_" + std::to_string(i) + ".ply",
+            utility::write_ply(debug_path + "defects_" + std::to_string(i) + ".ply",
                                filtered_defects[i],
                                utility::FileFormat::BINARY);
     }

@@ -47,6 +47,7 @@ public:
     static void detect_pinholes_nva_dll(std::shared_ptr<geometry::PointCloud> cloud,
                                 geometry::KDTreeSearchParamRadius param,
                                 std::vector<geometry::PointCloud::Ptr>& filtered_defects,
+                                std::string &debug_path,
                                 float height_threshold = 0.0,
                                 float radius = 0.08,
                                 size_t min_points = 5,
