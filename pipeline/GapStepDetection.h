@@ -25,6 +25,14 @@ public:
                                 std::vector<std::vector<double>>& temp_res,
                                 std::string& debug_path,
                                 bool debug_mode);
+    static void detect_gap_step_dll_plot(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            Eigen::Vector3d transformation_matrix,
+            double& gap_step,
+            double& step_width,
+            std::vector<std::vector<double>>& temp_res,
+            std::string& debug_path,
+            bool debug_mode);
 
     static void slice_along_y(geometry::PointCloud::Ptr cloud,
                               Eigen::Vector3d transformation_matrix);
@@ -38,6 +46,10 @@ public:
                                       lineSegments& corners,
                                       std::string& debug_path,
                                       bool debug_mode);
+    static void bspline_interpolation_dll(geometry::PointCloud::Ptr cloud,
+                                          lineSegments& corners,
+                                          std::string& debug_path,
+                                          bool debug_mode);
     static void calculate_gap_step(lineSegments& corners,
                                    double& gap_step,
                                    double& step_width);
@@ -49,6 +61,9 @@ public:
 private:
     static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(
             std::vector<Eigen::Vector2d>& sampled_pts);
+    static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(
+            std::vector<Eigen::Vector2d>& sampled_pts,
+            Eigen::Vector2d& max_derivative_point);
     static std::vector<std::vector<Eigen::Vector2d>> statistics_filter(
             std::vector<std::vector<Eigen::Vector2d>>& clusters);
     static void plot_clusters(
@@ -66,11 +81,23 @@ private:
             int img_id);
     static lineSegments line_segment(
             std::vector<std::vector<Eigen::Vector2d>>& pt_groups);
+    static lineSegments line_segment_dll(
+            std::vector<std::vector<Eigen::Vector2d>>& pt_groups,
+            std::vector<std::vector<Eigen::Vector2d>>& filter_pt_groups,
+            double& left_height_threshold,
+            double& right_height_threshold);
     static void compute_step_width(
             std::vector<Eigen::Vector2d>& resampled_pts,
             lineSegments& line_segs,
             std::vector<std::vector<Eigen::Vector2d>>& intersections,
             double height_threshold);
+    static void compute_step_width_dll(
+            std::vector<Eigen::Vector2d>& resampled_pts,
+            lineSegments& line_segs,
+            std::vector<std::vector<Eigen::Vector2d>>& intersections,
+            double left_height_threshold,
+            double right_height_threshold,
+            Eigen::Vector2d& max_derivative_point);
 };
 
 }  // namespace pipeline

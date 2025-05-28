@@ -54,16 +54,19 @@ int main(int argc, char **argv) {
     //             pointcloud, param, height_threshold, radius, min_points);
 
     bool denoise = false;
-    bool debug_mode = true;
+    bool debug_mode = false;
     //     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.01, 0.03,
     //     0.001);
     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.01, 0.03, 0.5);
     //     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(1, 1, 1);
+    auto start = std::chrono::high_resolution_clock::now();
     pipeline::DefectDetection::detect_pinholes_nva(
             pointcloud, param, height_threshold, radius, min_points,
             transformation_matrix, ratio_x, ratio_y, dist_x, dist_y, denoise,
             debug_mode);
-
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+    std::cout << "times:" << elapsed.count() << "ms" << std::endl;
     //     core::Cluster::RegionGrowingCluster(*pointcloud, radius,
     //     long_normal_degree,
     //                                         long_curvature_threshold,

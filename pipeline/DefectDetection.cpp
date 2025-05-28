@@ -11,6 +11,7 @@
 #include "Filter.h"
 #include "MathTool.h"
 #include "PlaneDetection.h"
+#include "FileSystem.h"
 
 namespace hymson3d {
 namespace pipeline {
@@ -491,6 +492,121 @@ void DefectDetection::detect_pinholes_nva(
     if (debug_mode) {
         for (int i = 0; i < filtered_defects.size(); i++)
             utility::write_ply("defects_" + std::to_string(i) + ".ply",
+                               filtered_defects[i],
+                               utility::FileFormat::BINARY);
+    }
+    LOG_INFO("Detected {} defects.", filtered_defects.size());
+}
+
+void DefectDetection::detect_pinholes_nva_dll(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        geometry::KDTreeSearchParamRadius param,
+        std::vector<geometry::PointCloud::Ptr>& filtered_defects,
+        std::string &debug_path,
+        float height_threshold,
+        float radius,
+        size_t min_points,
+        Eigen::Vector3d transformation_matrix,
+        float ratio_x,
+        float ratio_y,
+        double dist_x,
+        double dist_y,
+        bool denoise,
+        bool debug_mode) {
+    // 1.0 keep egde points and r-corner points
+    std::shared_ptr<geometry::PointCloud> points =
+            std::make_shared<geometry::PointCloud>();
+    height_filter(cloud, points, height_threshold);
+    if (debug_mode) {
+        utility::filesystem::MakeDirectory_dll(debug_path);
+        utility::write_ply(debug_path+"test_0.ply", points, utility::FileFormat::BINARY);
+    }
+
+
+    // 1.1 denoise
+    if (denoise) {
+        LOG_INFO("Denoise: {} before denoised.", points->points_.size());
+        core::Filter filter;
+        auto filter_res = filter.StatisticalOutliers(points, 250, 2.0);
+        points = std::get<0>(filter_res);
+        LOG_INFO("Denoise: {} After denoised.", points->points_.size());
+    }
+
+    // 1.2 normal estimation
+    core::feature::ComputeNormals_PCA(*points, param);
+    core::feature::orient_normals_towards_positive_z(*points);
+
+    // 1.2 cluster
+    // int num_clusters =
+    //         core::Cluster::DBSCANCluster(*points, radius, min_points);
+    int num_clusters = 1;
+    points->labels_ = std::vector<int>(points->points_.size(), 0);
+    std::vector<geometry::PointCloud::Ptr> clusters;
+    part_separation(points, clusters, num_clusters);
+
+    // 1.3 separate r-corner and the flip-edge
+    std::vector<geometry::PointCloud::Ptr> long_clouds;
+    std::vector<geometry::PointCloud::Ptr> corners_clouds;
+    extract_long_edge(long_clouds, corners_clouds, clusters, num_clusters);
+
+    // 2.0 nva method
+    std::vector<geometry::PointCloud::Ptr> defect_clouds;
+    defect_clouds.resize(long_clouds.size());
+    for (int i = 0; i < long_clouds.size(); i++) {
+        long_clouds[i]->PaintUniformColor(Eigen::Vector3d(1.0, 1.0, 1.0));
+        bool use_fpfh = false;
+        geometry::PointCloud::Ptr defect_cloud;
+        defect_cloud = FPFH_NVA(long_clouds[i], ratio_x, ratio_y, dist_x,
+                                dist_y, use_fpfh);
+        if (defect_cloud->HasPoints() && defect_cloud->points_.size() > 20) {
+            defect_clouds[i] = defect_cloud;
+        }
+        if (debug_mode)
+            utility::write_ply(debug_path + "pinhole_nva" + std::to_string(i) + ".ply",
+                               long_clouds[i], utility::FileFormat::BINARY);
+    }
+
+    // 3.0 process the initial defect clouds
+    slice_along_y(long_clouds, transformation_matrix);
+    std::vector<std::vector<geometry::PointCloud::Ptr>> total_defects;
+    total_defects.resize(long_clouds.size());
+    for (int i = 0; i < defect_clouds.size(); i++) {
+        if (defect_clouds[i] == nullptr) continue;
+        double r = radius * 2;
+        int m = 20;
+        int num_defects = core::Cluster::DBSCANCluster(*defect_clouds[i], r, m);
+        std::vector<geometry::PointCloud::Ptr> defects;
+        part_separation(defect_clouds[i], defects, num_defects);
+        total_defects[i] = defects;
+    }
+
+    // 3.1 selection of initial defects
+    //std::vector<geometry::PointCloud::Ptr> filtered_defects;
+    for (int i = 0; i < total_defects.size(); i++) {
+        if (total_defects[i].size() == 0) continue;
+        for (int j = 0; j < total_defects[i].size(); j++) {
+            Eigen::Vector3d center = total_defects[i][j]->points_.at(
+                    int(total_defects[i][j]->points_.size() / 2));
+
+            // find the peak of slices
+            int idx = (int)((center.y() - long_clouds[i]->points_.front().y()) /
+                            transformation_matrix.y());
+            // std::cout << "idx: " << idx << std::endl;
+            // std::cout << "center.y(): " << center.y() << std::endl;
+            // std::cout << "bottom: " << long_clouds[i]->points_.front().y()
+            //           << std::endl;
+            double up_bound = long_clouds[i]->y_slice_peaks[idx];
+            // std::cout << "center: " << center << std::endl;
+            // std::cout << "up_bound: " << up_bound << std::endl;
+            // std::cout << "center.z(): " << center.z() << std::endl;
+            if ((up_bound - 0.3) < center.z()) {
+                filtered_defects.emplace_back(total_defects[i][j]);
+            }
+        }
+    }
+    if (debug_mode) {
+        for (int i = 0; i < filtered_defects.size(); i++)
+            utility::write_ply(debug_path + "defects_" + std::to_string(i) + ".ply",
                                filtered_defects[i],
                                utility::FileFormat::BINARY);
     }

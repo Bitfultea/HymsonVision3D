@@ -44,6 +44,22 @@ public:
                                     bool denoise = true,
                                     bool debug_mode = true);
 
+    static void detect_pinholes_nva_dll(std::shared_ptr<geometry::PointCloud> cloud,
+                                geometry::KDTreeSearchParamRadius param,
+                                std::vector<geometry::PointCloud::Ptr>& filtered_defects,
+                                std::string &debug_path,
+                                float height_threshold = 0.0,
+                                float radius = 0.08,
+                                size_t min_points = 5,
+                                Eigen::Vector3d transformation_matrix =
+                                        Eigen::Vector3d(0.01, 0.03, 0.001),
+                                float ratio_x = 0.4,
+                                float ratio_y = 0.4,
+                                double dist_x = 1e-4,
+                                double dist_y = 1e-4,
+                                bool denoise = true,
+                                bool debug_mode = true);
+
     static void detect_CSAD(std::shared_ptr<geometry::PointCloud> cloud,
                             geometry::KDTreeSearchParamRadius param,
                             float height_threshold = 0.0,

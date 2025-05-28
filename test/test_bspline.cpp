@@ -23,6 +23,7 @@ int main(int argc, char **argv) {
     // for (int i = 0; i < 8; i++) {
     //     control_pts.emplace_back(Eigen::Vector2d(x[i], y[i]));
     // }
+    /*
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
     utility::read_ply(argv[1], pointcloud);
@@ -62,7 +63,7 @@ int main(int argc, char **argv) {
             pointcloud, transformation_matrix, debug_mode);
 
     Eigen::MatrixXd M = Eigen::MatrixXd::Random(10, 10);
-
+    */
     //     // 手动添加异常值（稀疏矩阵部分）
     //     M(2, 3) += 10;
     //     M(5, 7) -= 15;
@@ -77,5 +78,55 @@ int main(int argc, char **argv) {
     //     std::cout << "Original Matrix M:\n" << M << "\n";
     //     std::cout << "Low-rank Matrix L:\n" << L << "\n";
     //     std::cout << "Sparse Matrix S:\n" << S << "\n";
+    //void GapStepDetection::detect_gap_step_dll_plot(
+    //        std::shared_ptr<geometry::PointCloud> cloud,
+    //        Eigen::Vector3d transformation_matrix, double& gap_step,
+    //        double& step_width, double& height_threshold,
+    //        std::vector<std::vector<double>>& temp_res, std::string& debug_path,
+    //        bool debug_mode)
+    geometry::PointCloud::Ptr pointcloud =
+            std::make_shared<geometry::PointCloud>();
+    utility::read_ply("F:/qhchen/EncapsulationCplus/EncapsulationCplus/output_pointcloud.ply", pointcloud);
+    double step_height = 0;
+    double step_width = 0; 
+    //double height_threshold = 0.01;
+    Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.005, 0.1, 1);
+    std::vector<std::vector<double>> temp_res;
+    temp_res.resize(2);
+    std::string debug_path = "C:\\Users\\Administrator\\Desktop\\res\\bspline\\";
+    bool debug_mode = true;
+
+
+    for (int i = 0; i < 3; i++) {
+        std::cout << "current i: " << i << std::endl;
+        //pipeline::GapStepDetection::detect_gap_step_dll_plot(
+        //        pointcloud, transformation_matrix, step_height, step_width, 
+        //    height_threshold, temp_res, debug_path, 
+        //    debug_mode);
+        pipeline::GapStepDetection::detect_gap_step_dll_plot(
+                pointcloud, transformation_matrix, step_height, step_width,
+                temp_res, debug_path, debug_mode);
+        pointcloud->points_.clear();
+        pointcloud->y_slices_.clear();
+        pointcloud->y_slice_peaks.clear();
+        //pointcloud->normals_.clear();  // 可选
+        //pointcloud->colors_.clear();   // 可选
+        //pointcloud->labels_.clear();   // 可选
+        utility::read_ply(
+                "F:/qhchen/EncapsulationCplus/EncapsulationCplus/"
+                "output_pointcloud.ply",
+                pointcloud);
+        step_height = 0;
+        step_width = 0;
+        //height_threshold = 0.01;
+        transformation_matrix = Eigen::Vector3d(0.005, 0.1, 1);
+        temp_res.clear();
+        temp_res.resize(2);
+        //std::vector<std::vector<double>> temp_res;
+        debug_path =
+                "C:\\Users\\Administrator\\Desktop\\res\\bspline\\";
+        debug_mode = true;
+    }
+    system("pause");
     return 0;
 }
