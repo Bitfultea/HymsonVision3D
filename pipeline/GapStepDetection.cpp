@@ -294,7 +294,7 @@ void GapStepDetection::bspline_interpolation_dll(
     step_height.resize(cloud->y_slices_.size());
     corners.resize(cloud->y_slices_.size());
 
-//#pragma omp parallel for
+#pragma omp parallel for
     for (int i = 0; i < cloud->y_slices_.size(); i++) {
         if (cloud->y_slices_[i].size() == 0) continue;
         std::vector<Eigen::Vector2d> resampled_pts =
@@ -318,10 +318,10 @@ void GapStepDetection::bspline_interpolation_dll(
         corners[i] = std::make_pair(intersections[2][0], intersections[2][1]);
 
         if (debug_mode) {
-             plot_clusters_dll(resampled_pts, groups, lines,
-                               intersections, debug_path, i);
-            //plot_clusters_dll(resampled_pts, groups, lines, intersections,
-            //                  debug_path, i);
+             //plot_clusters_dll(resampled_pts, groups, lines,
+             //                  intersections, debug_path, i);
+            plot_clusters_dll(resampled_pts, filter_groups, lines, intersections,
+                              debug_path, i);
         }
     }
 
