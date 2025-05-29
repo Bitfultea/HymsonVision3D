@@ -301,26 +301,27 @@ void GapStepDetection::bspline_interpolation_dll(
                 plane_detector.resample_a_curve(cloud->y_slices_[i],
                                                 sampled_pts, i, false);
         // compute the derivative
-        Eigen::Vector2d max_derivative_point;
+        std::vector<Eigen::Vector2d> limit_pts;
         std::vector<std::vector<Eigen::Vector2d>> groups =
-                group_by_derivative(resampled_pts, max_derivative_point);
+                group_by_derivative_dll(resampled_pts);
 
         std::vector<std::vector<Eigen::Vector2d>> filter_groups =
-                statistics_filter(groups);
+                statistics_filter(groups, limit_pts);
         double left_height_threshold = 0, right_height_threshold = 0;
         lineSegments lines = line_segment_dll(groups, filter_groups, 
                                         left_height_threshold, right_height_threshold);
         step_height[i] = std::abs(lines[0].first.y() - lines[1].first.y());
         std::vector<std::vector<Eigen::Vector2d>> intersections;
         compute_step_width_dll(resampled_pts, lines, intersections,
-                           left_height_threshold, right_height_threshold, max_derivative_point);
+                           left_height_threshold, right_height_threshold, limit_pts);
         // put two corners corresponding to the slice to container
         corners[i] = std::make_pair(intersections[2][0], intersections[2][1]);
 
         if (debug_mode) {
              //plot_clusters_dll(resampled_pts, groups, lines,
              //                  intersections, debug_path, i);
-            plot_clusters_dll(resampled_pts, filter_groups, lines, intersections,
+            plot_clusters_dll(resampled_pts, filter_groups, lines,
+                              intersections, limit_pts,
                               debug_path, i);
         }
     }
@@ -371,9 +372,9 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::group_by_derivative(
     }
     return clusters;
 }
-    std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::group_by_derivative(
-        std::vector<Eigen::Vector2d>& sampled_pts,
-        Eigen::Vector2d& max_derivative_point) {
+    std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::group_by_derivative_dll(
+        std::vector<Eigen::Vector2d>& sampled_pts
+/*        Eigen::Vector2d& max_derivative_point*/) {
     std::vector<Eigen::Vector2d> horiz_pts;
     for (int i = 0; i < sampled_pts.size(); i++) {
         double derivative;
@@ -519,42 +520,42 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::group_by_derivative(
         min_pt1 = *minmax_x1.first;
         max_pt1 = *minmax_x1.second;
     }
-    //find ref intersection point
-    double left_x = max_pt0.x(), right_x = min_pt1.x();
-    if (min_pt0.x() >= max_pt1.x()) {
-        left_x = max_pt1.x();
-        right_x = min_pt0.x();
-    }
-    std::vector<Eigen::Vector2d> ref_pts;
-    for (int i = 0; i < sampled_pts.size(); i++) {
-        if (sampled_pts[i].x() < left_x || sampled_pts[i].x() > right_x) continue;
-        ref_pts.push_back(sampled_pts[i]);
-    }
-    double max_abs_derivative = 0.0;
-    //Eigen::Vector2d max_derivative_point;
-    for (int i = 0; i < ref_pts.size(); i++) {
-        double derivative;
-        if (i == 0) {
-            double denominator = ref_pts[i + 1](0) - ref_pts[i](0);
-            if (denominator == 0) continue;
-            derivative = (ref_pts[i + 1](1) - ref_pts[i](1)) /
-                         (ref_pts[i + 1](0) - ref_pts[i](0));
-        } else if (i == ref_pts.size() - 1) {
-            double denominator = ref_pts[i](0) - ref_pts[i - 1](0);
-            if (denominator == 0) continue;
-            derivative = (ref_pts[i](1) - ref_pts[i - 1](1)) /
-                         (ref_pts[i](0) - ref_pts[i - 1](0));
-        } else {
-            double denominator = ref_pts[i + 1](0) - ref_pts[i - 1](0);
-            if (denominator == 0) continue;
-            derivative = (ref_pts[i + 1](1) - ref_pts[i - 1](1)) /
-                         (ref_pts[i + 1](0) - ref_pts[i - 1](0));
-        }
-        if (std::abs(derivative) > max_abs_derivative) {
-            max_abs_derivative = std::abs(derivative);
-            max_derivative_point = ref_pts[i];
-        }
-    }
+    ////find ref intersection point
+    //double left_x = max_pt0.x(), right_x = min_pt1.x();
+    //if (min_pt0.x() >= max_pt1.x()) {
+    //    left_x = max_pt1.x();
+    //    right_x = min_pt0.x();
+    //}
+    //std::vector<Eigen::Vector2d> ref_pts;
+    //for (int i = 0; i < sampled_pts.size(); i++) {
+    //    if (sampled_pts[i].x() < left_x || sampled_pts[i].x() > right_x) continue;
+    //    ref_pts.push_back(sampled_pts[i]);
+    //}
+    //double max_abs_derivative = 0.0;
+    ////Eigen::Vector2d max_derivative_point;
+    //for (int i = 0; i < ref_pts.size(); i++) {
+    //    double derivative;
+    //    if (i == 0) {
+    //        double denominator = ref_pts[i + 1](0) - ref_pts[i](0);
+    //        if (denominator == 0) continue;
+    //        derivative = (ref_pts[i + 1](1) - ref_pts[i](1)) /
+    //                     (ref_pts[i + 1](0) - ref_pts[i](0));
+    //    } else if (i == ref_pts.size() - 1) {
+    //        double denominator = ref_pts[i](0) - ref_pts[i - 1](0);
+    //        if (denominator == 0) continue;
+    //        derivative = (ref_pts[i](1) - ref_pts[i - 1](1)) /
+    //                     (ref_pts[i](0) - ref_pts[i - 1](0));
+    //    } else {
+    //        double denominator = ref_pts[i + 1](0) - ref_pts[i - 1](0);
+    //        if (denominator == 0) continue;
+    //        derivative = (ref_pts[i + 1](1) - ref_pts[i - 1](1)) /
+    //                     (ref_pts[i + 1](0) - ref_pts[i - 1](0));
+    //    }
+    //    if (std::abs(derivative) > max_abs_derivative) {
+    //        max_abs_derivative = std::abs(derivative);
+    //        max_derivative_point = ref_pts[i];
+    //    }
+    //}
     // statistics filter
     return clusters;
 }
@@ -587,6 +588,58 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::statistics_filter(
             }
         }
         filter_group_pts.push_back(filtered_cluster);
+    }
+    return filter_group_pts;
+}
+
+std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::statistics_filter(
+        std::vector<std::vector<Eigen::Vector2d>>& clusters,
+        std::vector<Eigen::Vector2d>& limit_pts) {
+    std::vector<std::vector<Eigen::Vector2d>> filter_group_pts;
+    for (int i = 0; i < clusters.size(); i++) {
+        Eigen::Vector2d mean(0, 0);
+        mean = std::accumulate(clusters[i].begin(), clusters[i].end(),
+                               Eigen::Vector2d(0, 0));
+        mean /= double(clusters[i].size());
+        double sum_sq_diff_x = 0.0;
+        double sum_sq_diff_y = 0.0;
+        for (const auto& pt : clusters[i]) {
+            sum_sq_diff_x += (pt.x() - mean.x()) * (pt.x() - mean.x());
+            sum_sq_diff_y += (pt.y() - mean.y()) * (pt.y() - mean.y());
+        }
+        double std_dev_x = std::sqrt(sum_sq_diff_x / clusters[i].size());
+        double std_dev_y = std::sqrt(sum_sq_diff_y / clusters[i].size());
+        double threshold_x = 1.5 * std_dev_x;
+        double threshold_y = 1.2 * std_dev_y;
+
+        // Filter points
+        std::vector<Eigen::Vector2d> filtered_cluster;
+        for (const auto& pt : clusters[i]) {
+            if (std::abs(pt.x() - mean.x()) <= threshold_x &&
+                std::abs(pt.y() - mean.y()) <= threshold_y) {
+                filtered_cluster.push_back(pt);
+            }
+        }
+        filter_group_pts.push_back(filtered_cluster);
+    }
+    std::vector<Eigen::Vector2d> temp_pts;
+
+    for (int i = 0; i < 2 && i < filter_group_pts.size(); ++i) {
+        auto [min_it, max_it] = std::minmax_element(
+                filter_group_pts[i].begin(), filter_group_pts[i].end(),
+                [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                    return a.x() < b.x();
+                });
+
+        temp_pts.push_back(*min_it);  // 左边界点
+        temp_pts.push_back(*max_it);  // 右边界点
+    }
+    if (temp_pts[1].x() > temp_pts[2].x()) {
+        limit_pts.push_back(temp_pts[3]);
+        limit_pts.push_back(temp_pts[0]);
+    } else {
+        limit_pts.push_back(temp_pts[1]);
+        limit_pts.push_back(temp_pts[2]);
     }
     return filter_group_pts;
 }
@@ -710,6 +763,146 @@ void GapStepDetection::plot_clusters(
         }
     }
     cv::imwrite("./bspline/group_pts" + std::to_string(img_id) + ".jpg", bg);
+}
+
+void GapStepDetection::plot_clusters_dll(
+        std::vector<Eigen::Vector2d>& resampled_pts,
+        std::vector<std::vector<Eigen::Vector2d>>& clusters,
+        lineSegments& line_segs,
+        std::vector<std::vector<Eigen::Vector2d>> intersections,
+        std::vector<Eigen::Vector2d>& limit_pts,
+        std::string& debug_path,
+        int img_id) {
+    cv::Mat bg = cv::Mat::zeros(500, 800, CV_8UC3);  // 创建一个空白图像
+    bg.setTo(cv::Scalar(255, 255, 255));
+    std::vector<double> x_vec;
+    std::vector<double> y_vec;
+
+    for (int i = 0; i < resampled_pts.size(); i++) {
+        x_vec.push_back(resampled_pts[i].x());
+        y_vec.push_back(resampled_pts[i].y());
+    }
+
+    double x_min = *std::min_element(x_vec.begin(), x_vec.end());
+    double x_max = *std::max_element(x_vec.begin(), x_vec.end());
+    double y_min = *std::min_element(y_vec.begin(), y_vec.end());
+    double y_max = *std::max_element(y_vec.begin(), y_vec.end());
+
+    for (size_t i = 0; i < x_vec.size(); ++i) {
+        int x = static_cast<int>((x_vec[i] - x_min) / (x_max - x_min) * 800);
+        int y = static_cast<int>(500 -
+                                 (y_vec[i] - y_min) / (y_max - y_min) * 500);
+        if ((x_vec[i] == limit_pts[0].x() && y_vec[i] == limit_pts[0].y()) ||
+            (x_vec[i] == limit_pts[1].x() && y_vec[i] == limit_pts[1].y())) {
+            // cv::circle(bg, cv::Point(x, y), 8, cv::Scalar(0, 0, 0),
+            //            -1);
+            cv::drawMarker(bg, cv::Point(x, y), cv::Scalar(0, 0, 0),
+                           cv::MARKER_SQUARE, 15);
+        } else if (x_vec[i] == limit_pts[2].x() &&
+                   y_vec[i] == limit_pts[2].y()) {
+            cv::drawMarker(bg, cv::Point(x, y), cv::Scalar(0, 0, 255),
+                           cv::MARKER_SQUARE, 10);
+        }
+        else {
+            cv::circle(bg, cv::Point(x, y), 2, cv::Scalar(0, 255, 0), -1);
+        }
+        //cv::circle(bg, cv::Point(x, y), 2, cv::Scalar(0, 255, 0), -1);
+    }
+
+    for (int i = 0; i < clusters.size(); i++) {
+        if (i == 0) {
+            double left_x = line_segs[i].first.x();
+            double right_x = line_segs[i].second.x();
+            double mean_z = line_segs[i].first.y();
+            for (auto pt : clusters[i]) {
+                int x = static_cast<int>((pt.x() - x_min) / (x_max - x_min) *
+                                         800);
+                int y = static_cast<int>(500 - (pt.y() - y_min) /
+                                                       (y_max - y_min) * 500);
+                cv::circle(bg, cv::Point(x, y), 2, cv::Scalar(0, 0, 255), -1);
+                // std::cout << pt.x() << " " << pt.y() << std::endl;
+                // std::cout << x << " " << y << std::endl;
+            }
+            int line_x_left =
+                    static_cast<int>((left_x - x_min) / (x_max - x_min) * 800);
+            int line_x_right =
+                    static_cast<int>((right_x - x_min) / (x_max - x_min) * 800);
+            int line_z = static_cast<int>(500 - (mean_z - y_min) /
+                                                        (y_max - y_min) * 500);
+            cv::line(bg, cv::Point(line_x_left, line_z),
+                     cv::Point(line_x_right, line_z), cv::Scalar(0, 0, 255), 1);
+        } else {
+            // i == 1
+            double left_x = line_segs[i].first.x();
+            double right_x = line_segs[i].second.x();
+            double mean_z = line_segs[i].first.y();
+            for (auto pt : clusters[i]) {
+                int x = static_cast<int>((pt.x() - x_min) / (x_max - x_min) *
+                                         800);
+                int y = static_cast<int>(500 - (pt.y() - y_min) /
+                                                       (y_max - y_min) * 500);
+                cv::circle(bg, cv::Point(x, y), 2, cv::Scalar(255, 0, 0), -1);
+            }
+            int line_x_left =
+                    static_cast<int>((left_x - x_min) / (x_max - x_min) * 800);
+            int line_x_right =
+                    static_cast<int>((right_x - x_min) / (x_max - x_min) * 800);
+            int line_z = static_cast<int>(500 - (mean_z - y_min) /
+                                                        (y_max - y_min) * 500);
+            cv::line(bg, cv::Point(line_x_left, line_z),
+                     cv::Point(line_x_right, line_z), cv::Scalar(255, 0, 0), 1);
+        }
+    }
+
+    for (int i = 0; i < intersections.size(); i++) {
+        if (i == 0) {
+            int tmp_y = 0;
+            for (auto pt : intersections[i]) {
+                int x = static_cast<int>((pt.x() - x_min) / (x_max - x_min) *
+                                         800);
+                int y = static_cast<int>(500 - (pt.y() - y_min) /
+                                                       (y_max - y_min) * 500);
+                cv::drawMarker(bg, cv::Point(x, y), cv::Scalar(0, 0, 255),
+                               cv::MARKER_STAR, 10);
+                tmp_y = y;
+                // std::cout << "Line: " << std::endl;
+                // std::cout << pt.x() << " " << pt.y() << std::endl;
+                // std::cout << x << " " << y << std::endl;
+            }
+            if (intersections[0].size() > 0)
+                cv::line(bg, cv::Point(0, tmp_y), cv::Point(799, tmp_y),
+                         cv::Scalar(0, 0, 255), 1);
+
+        } else if (i == 1) {
+            int tmp_y = 0;
+            for (auto pt : intersections[i]) {
+                int x = static_cast<int>((pt.x() - x_min) / (x_max - x_min) *
+                                         800);
+                int y = static_cast<int>(500 - (pt.y() - y_min) /
+                                                       (y_max - y_min) * 500);
+                cv::drawMarker(bg, cv::Point(x, y), cv::Scalar(255, 0, 0),
+                               cv::MARKER_STAR, 10);
+                tmp_y = y;
+            }
+            if (intersections[1].size() > 0)
+                cv::line(bg, cv::Point(0, tmp_y), cv::Point(799, tmp_y),
+                         cv::Scalar(255, 0, 0), 1);
+        } else {
+            // egde points i== 2
+            for (auto pt : intersections[i]) {
+                int x = static_cast<int>((pt.x() - x_min) / (x_max - x_min) *
+                                         800);
+                int y = static_cast<int>(500 - (pt.y() - y_min) /
+                                                       (y_max - y_min) * 500);
+                cv::drawMarker(bg, cv::Point(x, y), cv::Scalar(255, 0, 0),
+                               cv::MARKER_DIAMOND, 10);
+            }
+        }
+    }
+    // std::cout << "debug_path:"
+    //           << debug_path + "group_pts" + std::to_string(img_id) + ".jpg"
+    //           << std::endl;
+    cv::imwrite(debug_path + "group_pts" + std::to_string(img_id) + ".jpg", bg);
 }
 
 void GapStepDetection::plot_clusters_dll(
@@ -997,9 +1190,10 @@ void GapStepDetection::compute_step_width_dll(
         std::vector<Eigen::Vector2d>& resampled_pts,
         lineSegments& line_segs,
         std::vector<std::vector<Eigen::Vector2d>>& intersections,
-        double left_height_threshold,
-        double right_height_threshold,
-        Eigen::Vector2d& max_derivative_point) {
+        double& left_height_threshold,
+        double& right_height_threshold,
+        //Eigen::Vector2d& max_derivative_point,
+        std::vector<Eigen::Vector2d>& limit_pts) {
     std::pair<Eigen::Vector2d, Eigen::Vector2d> left_line = line_segs[0];
     std::pair<Eigen::Vector2d, Eigen::Vector2d> right_line = line_segs[1];
 
@@ -1008,11 +1202,8 @@ void GapStepDetection::compute_step_width_dll(
     std::vector<Eigen::Vector2d> left_intersections;
     std::vector<Eigen::Vector2d> right_intersections;
     std::vector<std::vector<Eigen::Vector2d>> res;
-    //存在问题，最低点不行，最靠近左右线也不行；
-    //左侧最低点替换为最接近右线的点
-    //右侧最低点替换为最接近左线的点
-    // 新思路，找不在聚类范围内斜率最大的点作为参考点, max_derivative_point
-    //int lowest_idx = 0;
+    int lowest_idx = 0;
+    double lowest_pt = std::numeric_limits<double>::max();
     double upper_bound = (-1) * std::numeric_limits<double>::max();
     double lower_bound = std::numeric_limits<double>::max();
 
@@ -1046,6 +1237,12 @@ void GapStepDetection::compute_step_width_dll(
             right_intersections.push_back(pt);
         }
         //if (pt.y() < resampled_pts[lowest_idx].y()) lowest_idx = i;
+        if (pt.x() > limit_pts[0].x() && pt.x() < limit_pts[1].x()) {
+            if (pt.y() < lowest_pt) {
+                lowest_pt = pt.y();
+                lowest_idx = i;
+            }
+        }
     }
     // std::cout << upper_bound << " " << lower_bound << std::endl;
     if (left_intersections.size() == 0) {
@@ -1061,13 +1258,14 @@ void GapStepDetection::compute_step_width_dll(
     intersections.emplace_back(left_intersections);
     intersections.emplace_back(right_intersections);
 
-    //Eigen::Vector2d mid_low = resampled_pts[lowest_idx];
+    Eigen::Vector2d mid_low = resampled_pts[lowest_idx];
+    limit_pts.push_back(mid_low);
 
     Eigen::Vector2d left_pt{0, 0};
     double left_dist = std::numeric_limits<double>::max();
     for (int i = 0; i < left_intersections.size(); i++) {
-        //double dist = mid_low.x() - left_intersections[i].x();
-        double dist = max_derivative_point.x() - left_intersections[i].x();
+        double dist = mid_low.x() - left_intersections[i].x();
+        //double dist = max_derivative_point.x() - left_intersections[i].x();
         if (dist < 0) continue;
         if (left_intersections[i].x() > left_pt.x() && dist < left_dist) {
             left_pt = left_intersections[i];
@@ -1079,8 +1277,8 @@ void GapStepDetection::compute_step_width_dll(
                              std::numeric_limits<double>::max()};
     double right_dist = std::numeric_limits<double>::max();
     for (int i = 0; i < right_intersections.size(); i++) {
-        //double dist = right_intersections[i].x() - mid_low.x();
-        double dist = right_intersections[i].x() - max_derivative_point.x();
+        double dist = right_intersections[i].x() - mid_low.x();
+        //double dist = right_intersections[i].x() - max_derivative_point.x();
         if (dist < 0) continue;
         if (right_intersections[i].x() < right_pt.x() && dist < right_dist) {
             right_pt = right_intersections[i];

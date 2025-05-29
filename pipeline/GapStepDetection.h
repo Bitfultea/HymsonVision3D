@@ -61,16 +61,26 @@ public:
 private:
     static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(
             std::vector<Eigen::Vector2d>& sampled_pts);
-    static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(
-            std::vector<Eigen::Vector2d>& sampled_pts,
-            Eigen::Vector2d& max_derivative_point);
+    static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative_dll(
+            std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<std::vector<Eigen::Vector2d>> statistics_filter(
             std::vector<std::vector<Eigen::Vector2d>>& clusters);
+    static std::vector<std::vector<Eigen::Vector2d>>  statistics_filter(
+            std::vector<std::vector<Eigen::Vector2d>>& clusters,
+            std::vector<Eigen::Vector2d>& limit_pts);
     static void plot_clusters(
             std::vector<Eigen::Vector2d>& resampled_pts,
             std::vector<std::vector<Eigen::Vector2d>>& clusters,
             lineSegments& line_segs,
             std::vector<std::vector<Eigen::Vector2d>> intersections,
+            int img_id);
+    static void plot_clusters_dll(
+            std::vector<Eigen::Vector2d>& resampled_pts,
+            std::vector<std::vector<Eigen::Vector2d>>& clusters,
+            lineSegments& line_segs,
+            std::vector<std::vector<Eigen::Vector2d>> intersections,
+            std::vector<Eigen::Vector2d>& limit_pts,
+            std::string& debug_path,
             int img_id);
     static void plot_clusters_dll(
             std::vector<Eigen::Vector2d>& resampled_pts,
@@ -95,9 +105,9 @@ private:
             std::vector<Eigen::Vector2d>& resampled_pts,
             lineSegments& line_segs,
             std::vector<std::vector<Eigen::Vector2d>>& intersections,
-            double left_height_threshold,
-            double right_height_threshold,
-            Eigen::Vector2d& max_derivative_point);
+            double& left_height_threshold,
+            double& right_height_threshold,
+            std::vector<Eigen::Vector2d>& limit_pts);
 };
 
 }  // namespace pipeline
