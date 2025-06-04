@@ -101,11 +101,12 @@ void GapStepDetection::detect_gap_step_dll_plot(
     calculate_gap_step_dll_plot(corners, gap_step, step_width, temp_res);
     // std::cout << "4" << std::endl;
 }
-void GapStepDetection::detect_gap_step_dll_plot(
+void GapStepDetection::detect_gap_step_dll_plot2(
         std::shared_ptr<geometry::PointCloud> cloud,
         Eigen::Vector3d transformation_matrix,
         double& gap_step,
         double& step_width,
+        double& height_threshold,
         std::vector<std::vector<double>>& temp_res,
         std::string& debug_path,
         bool debug_mode) {
@@ -126,7 +127,7 @@ void GapStepDetection::detect_gap_step_dll_plot(
     lineSegments corners;
     // bspline_interpolation(cloud, height_threshold, corners, debug_mode);
     // std::cout << "3" << std::endl;
-    bspline_interpolation_dll(cloud, corners, debug_path, debug_mode);
+    bspline_interpolation_dll2(cloud, height_threshold, corners, debug_path, debug_mode);
     // std::cout << "3" << std::endl;
 
     // calculate the gap step result
@@ -168,8 +169,9 @@ void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
     } else {
         Eigen::Vector3d min_bound = cloud->GetMinBound();
         Eigen::Vector3d max_bound = cloud->GetMaxBound();
-        int num_slice = (int)((max_bound.y() / transformation_matrix.y()) -
-                              (min_bound.y()) / transformation_matrix.y() + 1);
+        int num_slice = static_cast<int>((max_bound.y() - min_bound.y()) / transformation_matrix.y() + 0.5) + 1;
+        //int num_slice = (int)((max_bound.y() / transformation_matrix.y()) -
+        //                      (min_bound.y()) / transformation_matrix.y() + 1);
 
         std::vector<double> y_slice_peaks(num_slice, 0);
         cloud->y_slice_peaks = y_slice_peaks;
@@ -284,8 +286,9 @@ void GapStepDetection::bspline_interpolation_dll(
     // return sampled_map;
 }
 
-void GapStepDetection::bspline_interpolation_dll(
+void GapStepDetection::bspline_interpolation_dll2(
         geometry::PointCloud::Ptr cloud,
+        double height_threshold,
         lineSegments& corners,
         std::string& debug_path,
         bool debug_mode) {
@@ -309,10 +312,10 @@ void GapStepDetection::bspline_interpolation_dll(
 
         std::vector<std::vector<Eigen::Vector2d>> filter_groups =
                 statistics_filter(groups, limit_pts);
-        double left_height_threshold = 0, right_height_threshold = 0;
-        lineSegments lines =
-                line_segment_dll(groups, filter_groups, left_height_threshold,
-                                 right_height_threshold);
+        double left_height_threshold = height_threshold, right_height_threshold = height_threshold;
+        lineSegments lines = line_segment(filter_groups);
+        //lineSegments lines = line_segment_dll(groups, filter_groups, 
+        //                                left_height_threshold, right_height_threshold);
         step_height[i] = std::abs(lines[0].first.y() - lines[1].first.y());
         std::vector<std::vector<Eigen::Vector2d>> intersections;
         compute_step_width_dll(resampled_pts, lines, intersections,
@@ -777,7 +780,8 @@ void GapStepDetection::plot_clusters_dll(
         std::vector<Eigen::Vector2d>& limit_pts,
         std::string& debug_path,
         int img_id) {
-    cv::Mat bg = cv::Mat::zeros(500, 800, CV_8UC3);  // 创建一个空白图像
+    //cv::Mat bg = cv::Mat::zeros(500, 800, CV_8UC3);  // 创建一个空白图像
+    cv::Mat bg = cv::Mat::zeros(510, 810, CV_8UC3);  // 创建一个空白图像
     bg.setTo(cv::Scalar(255, 255, 255));
     std::vector<double> x_vec;
     std::vector<double> y_vec;
@@ -1334,14 +1338,14 @@ void GapStepDetection::calculate_gap_step_dll_plot(
     for (int i = 0; i < corners.size(); i++) {
         double temp_x = abs(corners[i].second.x() - corners[i].first.x());
         double temp_y = abs(corners[i].second.y() - corners[i].first.y());
-        temp_res[0].emplace_back(temp_x);
-        temp_res[1].emplace_back(temp_y);
         // exception
         if (temp_x > 100 || temp_y > 100) {
             std::cout << "current data error index: " << i << std::endl;
             exception_count++;
             continue;
         }
+        temp_res[0].emplace_back(temp_x);
+        temp_res[1].emplace_back(temp_y);
         sum_width += temp_x;
         sum_height += temp_y;
         // std::cout << i <<" " << corners[i].second.x() - corners[i].first.x()
