@@ -25,11 +25,12 @@ public:
                                 std::vector<std::vector<double>>& temp_res,
                                 std::string& debug_path,
                                 bool debug_mode);
-    static void detect_gap_step_dll_plot(
+    static void detect_gap_step_dll_plot2(
             std::shared_ptr<geometry::PointCloud> cloud,
             Eigen::Vector3d transformation_matrix,
             double& gap_step,
             double& step_width,
+            double& height_threshold,
             std::vector<std::vector<double>>& temp_res,
             std::string& debug_path,
             bool debug_mode);
@@ -46,7 +47,8 @@ public:
                                       lineSegments& corners,
                                       std::string& debug_path,
                                       bool debug_mode);
-    static void bspline_interpolation_dll(geometry::PointCloud::Ptr cloud,
+    static void bspline_interpolation_dll2(geometry::PointCloud::Ptr cloud,
+                                           double height_threshold,
                                           lineSegments& corners,
                                           std::string& debug_path,
                                           bool debug_mode);
