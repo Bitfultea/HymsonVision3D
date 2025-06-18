@@ -9,4 +9,5 @@ cmake-build-*
 /out/build/x64-Debug
 /build-back
 /.vs
+test/test_tiff2ply.cpp
 test/test_gsd.cpp

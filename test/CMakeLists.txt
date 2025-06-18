@@ -97,12 +97,27 @@ set_target_properties(bspline_test PROPERTIES
 endif()
 
 ##########################################################
+add_executable(
+	tiff2ply
+	test_tiff2ply.cpp
+)
+if(WIN32)
+set_target_properties(tiff2ply PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
 
+##########################################################
 enable_testing()
 
 
 
-
+target_link_libraries(
+  tiff2ply
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
+  core_lib
+)
 
 target_link_libraries(
   test_plana_2
