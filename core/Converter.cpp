@@ -127,7 +127,7 @@ void tiff_to_pointcloud(const std::string& tiff_path,
         std::vector<Eigen::Vector3d> new_pcd;
         for (auto pt : pcd) {
             if (pt.z() > 0 && pt.x() > 1.4) {
-                // if (pt.z() > 0) {
+            //if (pt.z() > 0) {
                 new_pcd.push_back(pt);
             }
         }

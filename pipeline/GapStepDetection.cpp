@@ -144,9 +144,11 @@ void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
     if (has_normals) {
         Eigen::Vector3d min_bound = cloud->GetMinBound();
         Eigen::Vector3d max_bound = cloud->GetMaxBound();
-        int num_slice = (int)(((max_bound.y() - min_bound.y()) /
-                               transformation_matrix.y()) +
-                              1);
+        //int num_slice = (int)(((max_bound.y() - min_bound.y()) /
+        //                       transformation_matrix.y()) +
+        //                      1);
+        int num_slice = static_cast<int>((max_bound.y() - min_bound.y()) /
+                                    transformation_matrix.y() + 0.5) + 1;
         std::vector<double> y_slice_peaks(num_slice, 0);
         cloud->y_slice_peaks = y_slice_peaks;
         cloud->y_slices_.resize(num_slice);
@@ -169,7 +171,8 @@ void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
     } else {
         Eigen::Vector3d min_bound = cloud->GetMinBound();
         Eigen::Vector3d max_bound = cloud->GetMaxBound();
-        int num_slice = static_cast<int>((max_bound.y() - min_bound.y()) / transformation_matrix.y() + 0.5) + 1;
+        int num_slice = static_cast<int>((max_bound.y() - min_bound.y()) / 
+                                    transformation_matrix.y() + 0.5) + 1;
         //int num_slice = (int)((max_bound.y() / transformation_matrix.y()) -
         //                      (min_bound.y()) / transformation_matrix.y() + 1);
 

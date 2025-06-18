@@ -60,6 +60,42 @@ public:
                                 bool denoise = true,
                                 bool debug_mode = true);
 
+    static void detect_pinholes_nva_roi_dll(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            geometry::KDTreeSearchParamRadius param,
+            std::vector<geometry::PointCloud::Ptr> &filtered_defects,
+            std::string &debug_path,
+            float height_threshold = 0.0,
+            float radius = 0.08,
+            Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.01,
+                                                                    0.03,
+                                                                    0.001),
+            float ratio_x = 0.4,
+            float ratio_y = 0.4,
+            double dist_x = 1e-4,
+            double dist_y = 1e-4,
+            bool denoise = true,
+            bool debug_mode = true);
+
+        static void detect_pinholes_nva_roi_dll_fast(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            geometry::KDTreeSearchParamRadius param,
+            std::vector<geometry::PointCloud::Ptr> &filtered_defects,
+            std::vector<int> &filtered_defects_ids,
+            std::vector<std::vector<double>>& defect_bounds,
+            std::string &debug_path,
+            float height_threshold = 0.0,
+            float radius = 0.08,
+            Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.01,
+                                                                    0.03,
+                                                                    0.001),
+            float ratio_x = 0.4,
+            float ratio_y = 0.4,
+            double dist_x = 1e-4,
+            double dist_y = 1e-4,
+            bool denoise = true,
+            bool debug_mode = true);
+
     static void detect_CSAD(std::shared_ptr<geometry::PointCloud> cloud,
                             geometry::KDTreeSearchParamRadius param,
                             float height_threshold = 0.0,
@@ -85,6 +121,33 @@ private:
             double dist_x,
             double dist_y,
             bool use_fpfh = false);
+
+    static std::shared_ptr<geometry::PointCloud> FPFH_NVA_Fast(
+                        std::shared_ptr<geometry::PointCloud> cloud,
+                        float ratio_x,
+                        float ratio_y,
+                        double dist_x,
+                        double dist_y,
+                        bool use_fpfh = false);
+
+    static std::vector<int> GetDefectIdxs(
+            geometry::PointCloud::Ptr defect_cloud,
+            std::shared_ptr<geometry::PointCloud> points);
+    static std::tuple<std::vector<int>, std::vector<std::pair<double, double>>>
+                SegmentByYContinuity(
+                const geometry::PointCloud &cloud, double dy_thresh);
+    static std::tuple<std::vector<std::pair<double, double>>,
+               std::vector<std::pair<double, double>>>
+    SegmentByYContinuityXYRanges(const geometry::PointCloud &cloud,
+                                            double dy_thresh);
+    static std::tuple<std::vector<std::pair<double, double>>,
+                      std::vector<std::pair<double, double>>>
+    SegmentByYContinuityXYRangesFast(const geometry::PointCloud &cloud,
+                                 double dy_thresh);
+    static int FindFragmentByY(
+            double y0, const std::vector<std::pair<double, double>> &y_ranges);  
+    static int FindFragmentByY_Binary(
+            double y0, const std::vector<std::pair<double, double>> &y_ranges);
 
     static void height_filter(std::shared_ptr<geometry::PointCloud> cloud,
                               std::shared_ptr<geometry::PointCloud> points,

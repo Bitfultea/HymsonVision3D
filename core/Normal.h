@@ -8,8 +8,9 @@ namespace feature {
 
 void ComputeNormals_PCA(geometry::PointCloud& cloud,
                         geometry::KDTreeSearchParam& param);
-
-// implemetation using PCL lib with PCA method
+void ComputeRotateNormals_PCA_Fast(geometry::PointCloud& cloud,
+                             const geometry::KDTreeSearchParam& param);
+        // implemetation using PCL lib with PCA method
 void ComputeNormals_PCL(geometry::PointCloud& cloud,
                         geometry::KDTreeSearchParam& param);
 
