@@ -297,6 +297,7 @@ void GapStepDetection::bspline_interpolation_dll(
 void GapStepDetection::bspline_interpolation_dll2(
         geometry::PointCloud::Ptr cloud,
         double height_threshold,
+        double up_height_threshold,
         lineSegments& corners,
         std::vector<double>& LHT_width,
         std::string& debug_path,
