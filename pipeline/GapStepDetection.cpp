@@ -109,6 +109,7 @@ void GapStepDetection::detect_gap_step_dll_plot2(
         double& height_threshold,
         std::vector<std::vector<double>>& temp_res,
         std::string& debug_path,
+        bool LHT,
         bool debug_mode) {
     // debug mode
     if (debug_mode) {
@@ -127,7 +128,7 @@ void GapStepDetection::detect_gap_step_dll_plot2(
     lineSegments corners;
     // bspline_interpolation(cloud, height_threshold, corners, debug_mode);
     // std::cout << "3" << std::endl;
-    bspline_interpolation_dll2(cloud, height_threshold, corners, debug_path, debug_mode);
+    bspline_interpolation_dll2(cloud, height_threshold, up_height_threshold, corners, debug_path, debug_mode);
     // std::cout << "3" << std::endl;
 
     // calculate the gap step result
@@ -292,6 +293,7 @@ void GapStepDetection::bspline_interpolation_dll(
 void GapStepDetection::bspline_interpolation_dll2(
         geometry::PointCloud::Ptr cloud,
         double height_threshold,
+        double up_height_threshold,
         lineSegments& corners,
         std::string& debug_path,
         bool debug_mode) {
@@ -322,8 +324,7 @@ void GapStepDetection::bspline_interpolation_dll2(
         step_height[i] = std::abs(lines[0].first.y() - lines[1].first.y());
         std::vector<std::vector<Eigen::Vector2d>> intersections;
         compute_step_width_dll(resampled_pts, lines, intersections,
-                               left_height_threshold, right_height_threshold,
-                               limit_pts);
+                           left_height_threshold, right_height_threshold, limit_pts, up_height_threshold);
         // put two corners corresponding to the slice to container
         corners[i] = std::make_pair(intersections[2][0], intersections[2][1]);
 
@@ -818,7 +819,7 @@ void GapStepDetection::plot_clusters_dll(
         }
         // cv::circle(bg, cv::Point(x, y), 2, cv::Scalar(0, 255, 0), -1);
     }
-
+    //origin lines
     for (int i = 0; i < clusters.size(); i++) {
         if (i == 0) {
             double left_x = line_segs[i].first.x();
@@ -863,7 +864,7 @@ void GapStepDetection::plot_clusters_dll(
                      cv::Point(line_x_right, line_z), cv::Scalar(255, 0, 0), 1);
         }
     }
-
+    //moved lines
     for (int i = 0; i < intersections.size(); i++) {
         if (i == 0) {
             int tmp_y = 0;
@@ -1202,8 +1203,11 @@ void GapStepDetection::compute_step_width_dll(
         std::vector<std::vector<Eigen::Vector2d>>& intersections,
         double& left_height_threshold,
         double& right_height_threshold,
-        // Eigen::Vector2d& max_derivative_point,
-        std::vector<Eigen::Vector2d>& limit_pts) {
+        //Eigen::Vector2d& max_derivative_point,
+        std::vector<Eigen::Vector2d>& limit_pts, 
+        double& up_height_threshold) {
+    //sample resampled_pts for up_height_threshold
+    //std::vector<Eigen::Vector2d> oversampled_pts;
     std::pair<Eigen::Vector2d, Eigen::Vector2d> left_line = line_segs[0];
     std::pair<Eigen::Vector2d, Eigen::Vector2d> right_line = line_segs[1];
 
@@ -1252,9 +1256,49 @@ void GapStepDetection::compute_step_width_dll(
                 lowest_pt = pt.y();
                 lowest_idx = i;
             }
+            //oversampled_pts.emplace_back(pt);
         }
     }
     // std::cout << upper_bound << " " << lower_bound << std::endl;
+    if (left_intersections.size() == 0 && right_intersections.size() == 0) {
+        double up_height = lowest_pt + up_height_threshold;
+        //upper_bound limit
+        if (up_height >= upper_bound) {
+            // not intersections
+            auto u_left = left_line.second;
+            left_intersections.push_back(u_left);
+            // not intersections
+            auto u_right = right_line.first;
+            right_intersections.push_back(u_right);
+        } else {
+            for (int i = 0; i < oversampled_pts.size() - 1; i++) {
+                auto pt = oversampled_pts[i];
+                auto next_pt = oversampled_pts[i + 1];
+                if ((pt.y() - up_height) * (next_pt.y() - up_height) < 0) {
+                    double denominator = next_pt.y() - pt.y();
+                    double t = 0.0;
+                    if (denominator != 0) {
+                        t = (up_height - pt.y()) / denominator;
+                    }
+                    double u = pt.x() + t * (next_pt.x() - pt.x());
+                    left_intersections.push_back(Eigen::Vector2d(u, up_height));
+                    right_intersections.push_back(Eigen::Vector2d(u, up_height));
+                }
+            }
+            // Degenerate
+            if (left_intersections.size() == 0) {
+                // not intersections
+                auto u = left_line.second;
+                left_intersections.push_back(u);
+            }
+            if (right_intersections.size() == 0) {
+                // not intersections
+                auto u = right_line.first;
+                right_intersections.push_back(u);
+            }
+        }
+    }
+    // Degenerate
     if (left_intersections.size() == 0) {
         // not intersections
         auto u = left_line.second;

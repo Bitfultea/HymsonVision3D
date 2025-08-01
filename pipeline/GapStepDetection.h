@@ -33,6 +33,7 @@ public:
             double& height_threshold,
             std::vector<std::vector<double>>& temp_res,
             std::string& debug_path,
+            bool LHT,
             bool debug_mode);
 
     static void slice_along_y(geometry::PointCloud::Ptr cloud,
@@ -48,7 +49,8 @@ public:
                                       std::string& debug_path,
                                       bool debug_mode);
     static void bspline_interpolation_dll2(geometry::PointCloud::Ptr cloud,
-                                           double height_threshold,
+                                          double height_threshold,
+                                          double up_height_threshold,
                                           lineSegments& corners,
                                           std::string& debug_path,
                                           bool debug_mode);
@@ -109,7 +111,8 @@ private:
             std::vector<std::vector<Eigen::Vector2d>>& intersections,
             double& left_height_threshold,
             double& right_height_threshold,
-            std::vector<Eigen::Vector2d>& limit_pts);
+            std::vector<Eigen::Vector2d>& limit_pts,
+            double& up_height_threshold);
 };
 
 }  // namespace pipeline
