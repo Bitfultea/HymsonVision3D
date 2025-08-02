@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
     utility::read_ply("F:/qhchen/EncapsulationCplus/EncapsulationCplus/output_pointcloud.ply", pointcloud);
     double step_height = 0;
     double step_width = 0; 
-    double height_threshold = 0.2;
+    double height_threshold = 0.4;
     bool LHT = true;
     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.005, 0.1, 1);
     std::vector<std::vector<double>> temp_res;
@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
         std::cout << "current i: " << i << std::endl;
         pipeline::GapStepDetection::detect_gap_step_dll_plot2(
                 pointcloud, transformation_matrix, step_height, step_width, 
-            height_threshold, up_height_threshold, temp_res, debug_path, 
+            height_threshold, temp_res, debug_path, LHT,
             debug_mode);
         //pipeline::GapStepDetection::detect_gap_step_dll_plot(
         //        pointcloud, transformation_matrix, step_height, step_width,

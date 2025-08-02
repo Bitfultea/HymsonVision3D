@@ -50,17 +50,20 @@ public:
                                       bool debug_mode);
     static void bspline_interpolation_dll2(geometry::PointCloud::Ptr cloud,
                                           double height_threshold,
-                                          double up_height_threshold,
                                           lineSegments& corners,
+                                          std::vector<double>& LHT_width,
                                           std::string& debug_path,
+                                          bool LHT,
                                           bool debug_mode);
     static void calculate_gap_step(lineSegments& corners,
                                    double& gap_step,
                                    double& step_width);
     static void calculate_gap_step_dll_plot(lineSegments& corners,
+                                   std::vector<double>& LHT_width,
                                    double& gap_step,
                                    double& step_width,
-                                   std::vector<std::vector<double>>& temp_res);
+                                   std::vector<std::vector<double>>& temp_res,
+                                   bool LHT);
 
 private:
     static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(
@@ -86,6 +89,16 @@ private:
             std::vector<Eigen::Vector2d>& limit_pts,
             std::string& debug_path,
             int img_id);
+    static void plot_clusters_dll_lht(
+            std::vector<Eigen::Vector2d>& cloud_pts,
+            std::vector<Eigen::Vector2d>& resampled_pts,
+            std::vector<std::vector<Eigen::Vector2d>>& clusters,
+            lineSegments& line_segs,
+            double& height_threshold,
+            std::vector<std::vector<Eigen::Vector2d>> intersections,
+            std::vector<Eigen::Vector2d>& limit_pts,
+            std::string& debug_path,
+            int img_id);
     static void plot_clusters_dll(
             std::vector<Eigen::Vector2d>& resampled_pts,
             std::vector<std::vector<Eigen::Vector2d>>& clusters,
@@ -106,13 +119,15 @@ private:
             std::vector<std::vector<Eigen::Vector2d>>& intersections,
             double height_threshold);
     static void compute_step_width_dll(
+            std::vector<Eigen::Vector2d>& cloud_pts,
             std::vector<Eigen::Vector2d>& resampled_pts,
             lineSegments& line_segs,
             std::vector<std::vector<Eigen::Vector2d>>& intersections,
+            std::vector<double>& temp_width,
             double& left_height_threshold,
             double& right_height_threshold,
             std::vector<Eigen::Vector2d>& limit_pts,
-            double& up_height_threshold);
+            bool LHT);
 };
 
 }  // namespace pipeline
