@@ -1,5 +1,7 @@
 #include "FileTool.h"
 
+#include <tiffio.h>
+
 #include "happly.h"
 using namespace happly;
 namespace hymson3d {
@@ -16,6 +18,92 @@ bool read_tiff(const std::string& filename, cv::Mat& image) {
     LOG_DEBUG("图像宽度：{}", image.cols);
     LOG_DEBUG("图像高度：{}", image.rows);
     LOG_DEBUG("通道数：{}", image.channels());
+    return true;
+}
+
+bool read_tiff_libtiff(const std::string& filename,
+                       cv::Mat& height_map,
+                       cv::Mat& intensity_map) {
+    TIFF* tiff = TIFFOpen(filename.c_str(), "r");
+    if (!tiff) {
+        LOG_ERROR("无法打开TIFF文件: {}", filename);
+        return false;
+    }
+
+    uint32_t width, height;
+    uint16_t channels, bits_per_sample;
+    uint16_t info;
+
+    TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &width);
+    TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &height);
+    TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &channels);
+    TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+    TIFFGetField(tiff, TIFFTAG_PAGENUMBER, &info);
+
+    LOG_DEBUG("TIFF信息 - 宽度: {}, 高度: {}, 通道数: {}, 位深度: {}", width,
+              height, channels, bits_per_sample);
+    std::cout << "图像信息：" << info << std::endl;
+    if (bits_per_sample != 32) {
+        LOG_ERROR("不支持的位深度: {}", bits_per_sample);
+        TIFFClose(tiff);
+        return false;
+    }
+    height_map = cv::Mat(height, width, CV_32FC1);
+    intensity_map = cv::Mat(height, width, CV_32FC1);
+
+    for (uint32_t row = 0; row < height; row++) {
+        float* buf = new float[width];
+        if (TIFFReadScanline(tiff, buf, row) == -1) {
+            LOG_ERROR("读取扫描行失败: {}", row);
+            delete[] buf;
+            TIFFClose(tiff);
+            return false;
+        }
+
+        float* height_ptr = height_map.ptr<float>(row);
+        float* intensity_ptr = intensity_map.ptr<float>(row);
+
+        // // 解析每个像素的32位浮点数
+        // for (uint32_t col = 0; col < width; col++) {
+        //     union {
+        //         float f;
+        //         uint32_t i;
+        //     } converter;
+        //     converter.f = buf[col];
+
+        //     // 方法1: 假设高16位是高度，低16位是灰度值
+        //     // 这是一种常见的编码方式
+        //     uint32_t bits = converter.i;
+        //     uint16_t height_bits = (bits >> 16) & 0xFFFF;
+        //     uint16_t intensity_bits = bits & 0xFFFF;
+
+        //     // 将位模式转换回浮点数
+        //     union {
+        //         uint32_t i;
+        //         float f;
+        //     } height_converter, intensity_converter;
+
+        //     // 构造新的浮点数表示
+        //     height_converter.i = (0x40000000 | (height_bits << 8));  //
+        //     简单示例 intensity_converter.i = (0x40000000 | (intensity_bits <<
+        //     8));
+
+        //     height_ptr[col] = height_converter.f - 2.0f;  // 调整到合理范围
+        //     intensity_ptr[col] = intensity_converter.f - 2.0f;
+        // }
+        for (uint32_t col = 0; col < width; col++) {
+            float value = buf[col];
+            float integer_part = std::floor(std::abs(value));
+            float decimal_part = std::abs(value) - integer_part;
+
+            height_ptr[col] = integer_part;
+            intensity_ptr[col] = decimal_part * 10000;  // 放大以便观察
+        }
+        delete[] buf;
+    }
+
+    TIFFClose(tiff);
+    LOG_INFO("成功读取TIFF文件，尺寸: {}x{}", width, height);
     return true;
 }
 
@@ -36,6 +124,33 @@ void write_ply(const std::string& filename,
     // Write the point cloud to a file
     writer.write<pcl::PointXYZ>(filename, cloud);
     LOG_INFO("Write {} points to {}", cloud.size(), filename);
+}
+
+std::pair<cv::Mat, cv::Mat> separate_float_components(
+        const cv::Mat& float_image) {
+    if (float_image.type() != CV_32FC1) {
+        LOG_ERROR("输入必须是单通道32位浮点图像");
+        return std::make_pair(cv::Mat(), cv::Mat());
+    }
+
+    cv::Mat integer_part(float_image.size(), CV_32FC1);
+    cv::Mat decimal_part(float_image.size(), CV_32FC1);
+
+    for (int i = 0; i < float_image.rows; ++i) {
+        for (int j = 0; j < float_image.cols; ++j) {
+            float value = float_image.at<float>(i, j);
+            float integer = std::floor(std::abs(value));  // 获取整数部分
+            float decimal = std::abs(value) - integer;    // 获取小数部分
+
+            integer_part.at<float>(i, j) = integer;
+            decimal_part.at<float>(i, j) = decimal;
+
+            // integer_part.at<uint8_t>(i, j) = integer_val;
+            // decimal_part.at<float>(i, j) = decimal_val;
+        }
+    }
+
+    return std::make_pair(integer_part, decimal_part);
 }
 
 void write_ply(const std::string& filename,

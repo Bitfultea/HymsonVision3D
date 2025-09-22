@@ -1,9 +1,9 @@
 #pragma once
-#include "fmtfallback.h"
 #include "2D/Curve.h"
 #include "3D/Plane.h"
 #include "3D/PointCloud.h"
 #include "Normal.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace core {
@@ -16,6 +16,8 @@ public:
     // Fitting a plane to many points in 3D
     // From https://www.ilikebigbits.com/2015_03_04_plane_from_points.html
     geometry::Plane::Ptr fit_a_plane(geometry::PointCloud& pointcloud);
+
+    geometry::Plane::Ptr fit_a_plane_ransc(geometry::PointCloud& cloud);
 
     // use bspline to fit a curve
     Eigen::VectorXd fit_a_curve(std::vector<Eigen::Vector2d> control_pts,

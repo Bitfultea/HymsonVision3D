@@ -1,8 +1,9 @@
 #pragma once
 #include <random>
-#include "fmtfallback.h"
+
 #include "3D/KDtree.h"
 #include "3D/PointCloud.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace core {
@@ -30,6 +31,14 @@ public:
                                      float normal_degree,
                                      float curvature_threshold,
                                      int min_cluster_size);
+
+    static void PlanarCluster(geometry::PointCloud& cloud,
+                              float radius,
+                              float normal_degree,
+                              float curvature_threshold = 0.0f,
+                              bool use_curvature = false,
+                              int min_cluster_size = 100,
+                              bool debug_mode = true);
 
 private:
     static Eigen::Vector3d GenerateRandomColor() {

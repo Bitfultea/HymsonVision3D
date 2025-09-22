@@ -210,6 +210,8 @@ void GapStepDetection::bspline_interpolation(geometry::PointCloud::Ptr cloud,
         std::vector<Eigen::Vector2d> resampled_pts =
                 plane_detector.resample_a_curve(cloud->y_slices_[i],
                                                 sampled_pts, i, false);
+        plane_detector.fit_a_curve(resampled_pts, sampled_pts, i, debug_mode);
+
         // compute the derivative
         std::vector<std::vector<Eigen::Vector2d>> groups =
                 group_by_derivative(resampled_pts);

@@ -57,6 +57,15 @@ set_target_properties(planar_test PROPERTIES
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 endif()
 
+add_executable(
+  test_plana_2
+  test_plane_2.cpp
+)
+if(WIN32)
+set_target_properties(test_plana_2 PROPERTIES 
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
 #########################################################
 add_executable(
   def_test
@@ -94,6 +103,15 @@ enable_testing()
 
 
 
+
+target_link_libraries(
+  test_plana_2
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline
+  core_lib
+)
 
 target_link_libraries(
   planar_test

@@ -15,6 +15,11 @@ namespace utility {
 enum FileFormat { BINARY = 0, ASCII = 1 };
 
 bool read_tiff(const std::string& filename, cv::Mat& image);
+bool read_tiff_libtiff(const std::string& filename,
+                       cv::Mat& height_map,
+                       cv::Mat& intensity_map);
+std::pair<cv::Mat, cv::Mat> separate_float_components(
+        const cv::Mat& float_image);
 void read_tiff(const char* filename);
 void write_tiff(const std::string& filename, const cv::Mat& image);
 void write_ply(const std::string& filename,

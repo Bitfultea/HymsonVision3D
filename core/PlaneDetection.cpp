@@ -7,6 +7,8 @@
 namespace hymson3d {
 namespace core {
 
+// Find the plane such that the summed squared distance from the
+// plane to all points is minimized.
 geometry::Plane::Ptr PlaneDetection::fit_a_plane(
         geometry::PointCloud& pointcloud) {
     Eigen::Vector3d centroid = pointcloud.GetCenter();
