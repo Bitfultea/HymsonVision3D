@@ -32,15 +32,14 @@ public:
                                      float curvature_threshold,
                                      int min_cluster_size);
 
-    static void PlanarCluster(geometry::PointCloud& cloud,
-                              float radius,
-                              float normal_degree,
-                              float curvature_threshold = 0.0f,
-                              bool use_curvature = false,
-                              int min_cluster_size = 100,
-                              bool debug_mode = true);
+    static int PlanarCluster(geometry::PointCloud& cloud,
+                             float radius,
+                             float normal_degree,
+                             float curvature_threshold = 0.0f,
+                             bool use_curvature = false,
+                             int min_cluster_size = 100,
+                             bool debug_mode = true);
 
-private:
     static Eigen::Vector3d GenerateRandomColor() {
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -50,6 +49,7 @@ private:
         return random_vector;
     }
 
+private:
     static void paint_cluster(geometry::PointCloud& cloud, int num_cluster) {
         std::vector<Eigen::Vector3d> cluster_colors;
         for (int i = 0; i < num_cluster; i++) {

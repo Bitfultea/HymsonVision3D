@@ -21,7 +21,11 @@ Eigen::Vector3d PointCloud::GetMaxBound() const {
     return ComputeMaxBound(points_);
 }
 
-// Eigen::Vector3d PointCloud::GetExtend() {}
+Eigen::Vector3d PointCloud::GetExtend() const {
+    auto max_bound = GetMaxBound();
+    auto min_bound = GetMinBound();
+    return max_bound - min_bound;
+}
 
 Eigen::Vector3d PointCloud::GetCenter() const { return ComputeCenter(points_); }
 

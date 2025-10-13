@@ -3,6 +3,8 @@
 #include <opencv2/opencv.hpp>
 
 #include "2D/Curve.h"
+#include "Filter.h"
+#include "open3d/TriangleMesh.h"
 
 namespace hymson3d {
 namespace core {
@@ -74,6 +76,225 @@ geometry::Plane::Ptr PlaneDetection::fit_a_plane(
     return plane;
 }
 
+geometry::Plane::Ptr PlaneDetection::fit_a_plane(
+        std::vector<Eigen::Vector3d>& points) {
+    Eigen::Vector3d centroid(0, 0, 0);
+    centroid = std::accumulate(points.begin(), points.end(), centroid);
+    centroid /= double(points.size());
+
+    // Calculate full 3x3 covariance matrix, excluding symmetries:
+    double xx = 0, xy = 0, xz = 0;
+    double yy = 0, yz = 0, zz = 0;
+
+    for (auto pt : points) {
+        Eigen::Vector3d r = pt - centroid;
+        xx += r.x() * r.x();
+        xy += r.x() * r.y();
+        xz += r.x() * r.z();
+        yy += r.y() * r.y();
+        yz += r.y() * r.z();
+        zz += r.z() * r.z();
+    }
+
+    // TODO::Experiemnt with following
+    // from https://www.ilikebigbits.com/2017_09_25_plane_from_points_2.html
+    size_t n = points.size();
+    xx /= n;
+    xy /= n;
+    xz /= n;
+    yy /= n;
+    yz /= n;
+    zz /= n;
+
+    Eigen::Vector3d weighted_dir(0, 0, 0);
+    // x direction
+    double det_x = yy * zz - yz * yz;
+    Eigen::Vector3d axis_dir_x(det_x, xz * yz - xy * zz, xy * yz - xz * yy);
+    double weight_x = det_x * det_x;
+    if (weighted_dir.dot(axis_dir_x) < 0.0) weight_x = -weight_x;
+    weighted_dir += axis_dir_x * weight_x;
+
+    // y direction
+    double det_y = xx * zz - xz * xz;
+    Eigen::Vector3d axis_dir_y(xz * yz - xy * zz, det_y, xy * xz - yz * xx);
+    double weight_y = det_y * det_y;
+    if (weighted_dir.dot(axis_dir_y) < 0.0) weight_y = -weight_y;
+    weighted_dir += axis_dir_y * weight_y;
+
+    // z direction
+    double det_z = xx * yy - xy * xy;
+    Eigen::Vector3d axis_dir_z(xy * yz - xz * yy, xy * xz - yz * xx, det_z);
+    double weight_z = det_z * det_z;
+    if (weighted_dir.dot(axis_dir_z) < 0.0) weight_z = -weight_z;
+    weighted_dir += axis_dir_z * weight_z;
+
+    double norm = weighted_dir.norm();
+    if (norm == 0) {
+        LOG_ERROR("Invalid Plane Normal Detected!");
+    }
+    weighted_dir /= weighted_dir.norm();  // normaliszed
+    double d = -weighted_dir.dot(centroid);
+
+    Eigen::Vector4d plane_coeff(weighted_dir.x(), weighted_dir.y(),
+                                weighted_dir.z(), d);
+    geometry::Plane::Ptr plane = std::make_shared<geometry::Plane>();
+    plane->coeff_ = plane_coeff;
+    plane->normal_ = weighted_dir;
+    plane->inlier_points_ = points;
+    plane->center_ = centroid;
+    return plane;
+}
+
+geometry::Plane::Ptr PlaneDetection::fit_a_plane_ransc(
+        geometry::PointCloud& cloud,
+        const double distance_threshold /* = 0.01 */,
+        const int ransac_n /* = 3 */,
+        const int num_iterations /* = 100 */,
+        const double probability /* = 0.99999999 */) {
+    if (probability <= 0 || probability > 1) {
+        LOG_ERROR("Probability must be > 0 and <= 1.0");
+    }
+
+    ransac_result ransac_result;
+    geometry::Plane::Ptr best_plane = std::make_shared<geometry::Plane>();
+    best_plane->coeff_ = Eigen::Vector4d::Zero();
+
+    size_t num_points = cloud.points_.size();
+    RandomSampler<size_t> sampler(num_points);
+
+    // Pre-generate all random samples before entering the parallel region
+    std::vector<std::vector<size_t>> all_sampled_indices;
+    all_sampled_indices.reserve(num_iterations);
+    for (int i = 0; i < num_iterations; i++) {
+        all_sampled_indices.push_back(sampler(ransac_n));
+    }
+
+    // Return if ransac_n is less than the required plane model parameters.
+    if (ransac_n < 3) {
+        LOG_ERROR("ransac_n should be set to higher than or equal to 3.");
+        // best_plane->inlier_idx_ = {};
+        return best_plane;
+    }
+    if (num_points < size_t(ransac_n)) {
+        LOG_ERROR("There must be at least 'ransac_n' points.");
+        return best_plane;
+    }
+
+    // Use size_t here to avoid large integer which acceed max of int.
+    size_t break_iteration = std::numeric_limits<size_t>::max();
+    int iteration_count = 0;
+
+#pragma omp parallel for
+    for (int itr = 0; itr < num_iterations; itr++) {
+        if ((size_t)iteration_count > break_iteration) {
+            continue;
+        }
+
+        // Access the pre-generated sampled indices
+        std::vector<size_t> inliers = all_sampled_indices[itr];
+
+        // Fit model to num_model_parameters randomly selected points among the
+        // inliers.
+        Eigen::Vector4d plane_model;
+        if (ransac_n == 3) {
+            plane_model = open3d::geometry::TriangleMesh::ComputeTrianglePlane(
+                    cloud.points_[inliers[0]], cloud.points_[inliers[1]],
+                    cloud.points_[inliers[2]]);
+        } else {
+            core::Filter filter;
+            std::shared_ptr<geometry::PointCloud> cloud_ptr =
+                    std::make_shared<geometry::PointCloud>(cloud);
+            auto pcd = filter.IndexDownSample(cloud_ptr, inliers);
+            plane_model = fit_a_plane(*pcd)->coeff_;
+        }
+
+        if (plane_model.isZero(0)) {
+            continue;
+        }
+
+        inliers.clear();
+        auto this_result = evaluate_RANSAC_baseon_distance(
+                cloud.points_, plane_model, inliers, distance_threshold);
+
+#pragma omp critical
+        {
+            if (this_result.fitness_ > ransac_result.fitness_ ||
+                (this_result.fitness_ == ransac_result.fitness_ &&
+                 this_result.inlier_rmse_ < ransac_result.inlier_rmse_)) {
+                ransac_result = this_result;
+                best_plane->coeff_ = plane_model;
+                if (ransac_result.fitness_ < 1.0) {
+                    break_iteration =
+                            std::min(log(1 - probability) /
+                                             log(1 - pow(ransac_result.fitness_,
+                                                         ransac_n)),
+                                     (double)num_iterations);
+                } else {
+                    // Set break_iteration to 0 to force to break the loop.
+                    break_iteration = 0;
+                }
+            }
+            iteration_count++;
+        }
+    }
+
+    // Find the final inliers using best_plane_model.
+    std::vector<size_t> final_inliers;
+    if (!best_plane->coeff_.isZero(0)) {
+        for (size_t idx = 0; idx < cloud.points_.size(); ++idx) {
+            Eigen::Vector4d point(cloud.points_[idx](0), cloud.points_[idx](1),
+                                  cloud.points_[idx](2), 1);
+            double distance = std::abs(best_plane->coeff_.dot(point));
+
+            if (distance < distance_threshold) {
+                final_inliers.emplace_back(idx);
+            }
+        }
+    }
+
+    // Improve best_plane_model using the final inliers.
+    best_plane = fit_a_plane(cloud);
+    best_plane->inlier_idx_ = final_inliers;
+
+    LOG_DEBUG(
+            "RANSAC | Inliers: {:d}, Fitness: {:e}, RMSE: {:e}, Iteration: "
+            "{:d}",
+            final_inliers.size(), ransac_result.fitness_,
+            ransac_result.inlier_rmse_, iteration_count);
+
+    return best_plane;
+}
+
+ransac_result PlaneDetection::evaluate_RANSAC_baseon_distance(
+        const std::vector<Eigen::Vector3d>& points,
+        const Eigen::Vector4d plane_model,
+        std::vector<size_t>& inliers,
+        double distance_threshold) {
+    ransac_result result;
+
+    double error = 0;
+    for (size_t idx = 0; idx < points.size(); ++idx) {
+        Eigen::Vector4d point(points[idx](0), points[idx](1), points[idx](2),
+                              1);
+        double distance = std::abs(plane_model.dot(point));
+
+        if (distance < distance_threshold) {
+            error += distance * distance;
+            inliers.emplace_back(idx);
+        }
+    }
+
+    size_t inlier_num = inliers.size();
+    if (inlier_num == 0) {
+        result.fitness_ = 0;
+        result.inlier_rmse_ = 0;
+    } else {
+        result.fitness_ = (double)inlier_num / (double)points.size();
+        result.inlier_rmse_ = std::sqrt(error / (double)inlier_num);
+    }
+    return result;
+}
+
 std::shared_ptr<geometry::BSpline> PlaneDetection::generate_a_curve(
         std::vector<Eigen::Vector2d> control_pts) {
     // 控制点 (x 和 y)
@@ -143,7 +364,8 @@ Eigen::VectorXd PlaneDetection::fit_a_curve(
 
     // 打印样条基矩阵的维度
     // if (debug_mode)
-    //     std::cout << "Spline basis B size: " << B.rows() << "x" << B.cols()
+    //     std::cout << "Spline basis B size: " << B.rows() << "x" <<
+    //     B.cols()
     //               << std::endl;
 
     std::vector<double> x_vec(x.data(), x.data() + x.size());
@@ -152,8 +374,9 @@ Eigen::VectorXd PlaneDetection::fit_a_curve(
     // 绘制样条曲线
     Eigen::VectorXd spline_x = spline.getSplineX(pts);
     Eigen::VectorXd spline_y = spline.getSplineY(pts);
-    // std::cout << "Spline X values: " << spline_x.transpose() << std::endl;
-    // std::cout << "Spline Y values: " << spline_y.transpose() << std::endl;
+    // std::cout << "Spline X values: " << spline_x.transpose() <<
+    // std::endl; std::cout << "Spline Y values: " << spline_y.transpose()
+    // << std::endl;
 
     // 差值新的点
     Eigen::VectorXd u = Eigen::VectorXd::LinSpaced(
@@ -211,7 +434,8 @@ std::vector<Eigen::Vector2d> PlaneDetection::resample_a_curve(
 
     // 打印样条基矩阵的维度
     // if (debug_mode)
-    //     std::cout << "Spline basis B size: " << B.rows() << "x" << B.cols()
+    //     std::cout << "Spline basis B size: " << B.rows() << "x" <<
+    //     B.cols()
     //               << std::endl;
 
     std::vector<double> x_vec(x.data(), x.data() + x.size());
@@ -232,7 +456,8 @@ std::vector<Eigen::Vector2d> PlaneDetection::resample_a_curve(
     resample_pts.resize(u_vec.size());
 #pragma omp parallel
     for (int i = 0; i < u_vec.size(); i++) {
-        // std::cout << "u= " << u_vec[i] << " v= " << v_vec[i] << std::endl;
+        // std::cout << "u= " << u_vec[i] << " v= " << v_vec[i] <<
+        // std::endl;
         resample_pts[i] = Eigen::Vector2d(u_vec[i], v_vec[i]);
     }
 
@@ -357,10 +582,11 @@ void PlaneDetection::plot_curve(std::vector<double> x_vec,
         cv::circle(image, cv::Point(x, y), 2, cv::Scalar(0, 255, 0), -1);
         // if (i < u_vec.size() - 1) {
         //     double derivative =
-        //             (v_vec[i + 1] - v_vec[i]) / (u_vec[i + 1] - u_vec[i]);
+        //             (v_vec[i + 1] - v_vec[i]) / (u_vec[i + 1] -
+        //             u_vec[i]);
         //     int d = static_cast<int>(500 -
-        //                              (derivative - (-10)) / (10 - (-10)) *
-        //                              500);
+        //                              (derivative - (-10)) / (10 - (-10))
+        //                              * 500);
         //     cv::circle(bg, cv::Point(x1, 1e4 * derivative), 2,
         //                cv::Scalar(0, 0, 0), -1);
         // }

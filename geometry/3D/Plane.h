@@ -19,6 +19,7 @@ public:
 
 public:
     void compute_orthogonal_basis();
+    void orient_normals_towards_positive_z();
 
 private:
     void project_to_frame();

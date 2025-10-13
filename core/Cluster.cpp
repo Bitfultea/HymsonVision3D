@@ -255,13 +255,13 @@ void Cluster::RegionGrowingCluster(geometry::PointCloud& cloud,
     LOG_INFO("Done Compute Clusters: {}", cluster_label);
 }
 
-void Cluster::PlanarCluster(geometry::PointCloud& cloud,
-                            float radius,
-                            float normal_degree,
-                            float curvature_threshold,
-                            bool use_curvature,
-                            int min_cluster_size,
-                            bool debug_mode) {
+int Cluster::PlanarCluster(geometry::PointCloud& cloud,
+                           float radius,
+                           float normal_degree,
+                           float curvature_threshold,
+                           bool use_curvature,
+                           int min_cluster_size,
+                           bool debug_mode) {
     LOG_INFO(
             "Start Planar Clusters with parameters: radius: {}, normal_degree: "
             "{},  min_cluster_size: {}",
@@ -364,6 +364,7 @@ void Cluster::PlanarCluster(geometry::PointCloud& cloud,
     // colorise the different clusters
     if (debug_mode) paint_cluster(cloud, cluster_label);
     LOG_INFO("Done Compute Clusters: {}", cluster_label);
+    return cluster_label;
 }
 
 }  // namespace core

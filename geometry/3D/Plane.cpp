@@ -21,5 +21,18 @@ void Plane::compute_orthogonal_basis() {
     orth_basis.col(2) = normal_;
 }
 
+void Plane::orient_normals_towards_positive_z() {
+    const Eigen::Vector3d z_reference = Eigen::Vector3d(0.0, 0.0, 1.0);
+    if (normal_.norm() == 0.0) {
+        LOG_ERROR(
+                "Plane's normal is not computed yet. Compute the planar "
+                "first.");
+        return;
+    }
+    if (normal_.dot(z_reference) < 0.0) {
+        normal_ *= -1.0;  // flip the normal
+    }
+}
+
 }  // namespace geometry
 }  // namespace hymson3d
