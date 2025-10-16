@@ -55,7 +55,6 @@ public:
             int min_cluster_size,
             bool debug_mode);
 
-private:
     static Eigen::Vector3d GenerateRandomColor() {
         std::random_device rd;
         std::mt19937 gen(rd());

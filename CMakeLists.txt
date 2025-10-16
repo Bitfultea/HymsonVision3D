@@ -49,6 +49,7 @@ find_package(CGAL REQUIRED)
 find_package(nanoflann REQUIRED)
 if(WIN32)
   find_package(boost REQUIRED)
+  find_package(TIFF REQUIRED)
 endif()
 
 #find_package(Open3D REQUIRED)
@@ -97,6 +98,7 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/include/tor
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/include")
 # OS specific settings
 if(WIN32)
+    include_directories(${TIFF_INCLUDE_DIR})
     # Windows defaults to hidden symbol visibility, override that
     # TODO: It would be better to explicitly export symbols.
     #       Then, we could use -fvisibility=hidden for Linux as well
@@ -130,3 +132,31 @@ add_subdirectory(core)
 add_subdirectory(geometry)
 add_subdirectory(pipeline)
 
+if(WIN32)
+  set(INSTALL_FOLDER  "${CMAKE_CURRENT_SOURCE_DIR}/build/deploy")
+  set(CMAKE_INSTALL_PREFIX  ${INSTALL_FOLDER})
+  # set(INSTALL_FOLDER  "deploy")
+
+  # Install all library targets with their runtime dependencies
+  install(TARGETS utility_lib pipeline core_lib geometry_3d_lib geometry_2d_lib thirdparty_lib
+          RUNTIME_DEPENDENCIES
+          PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+          POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
+          RUNTIME DESTINATION ${INSTALL_FOLDER}
+          LIBRARY DESTINATION ${INSTALL_FOLDER}
+          ARCHIVE DESTINATION ${INSTALL_FOLDER})
+  
+  # Install test executables with their runtime dependencies
+  install(TARGETS LoggerTest TorchTest TorchTest2 ConvertTiff CGAL_test
+          RUNTIME_DEPENDENCIES
+          PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+          POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
+          RUNTIME DESTINATION ${INSTALL_FOLDER})
+
+  # Use vcpkg to install dependencies
+  if(COMMAND vcpkg_install_dependencies)
+    vcpkg_install_dependencies(TARGETS LoggerTest TorchTest TorchTest2 ConvertTiff CGAL_test
+                               DESTINATION ${INSTALL_FOLDER})
+  endif()
+  
+endif()

@@ -24,9 +24,9 @@ int main(int argc, char **argv) {
     //     control_pts.emplace_back(Eigen::Vector2d(x[i], y[i]));
     // }
 
-    geometry::PointCloud::Ptr pointcloud =
+ /*   geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
-    utility::read_ply(argv[1], pointcloud);
+    utility::read_ply(argv[1], pointcloud);*/
     //     core::converter::tiff_to_pointcloud(argv[1], argv[2], pointcloud,
     //                                         Eigen::Vector3d(0.01, 0.03,
     //                                         0.001), true);
@@ -46,21 +46,21 @@ int main(int argc, char **argv) {
     //     float rcorner_curvature_threshold = 0.05;
     //     geometry::KDTreeSearchParamRadius param(0.08);
 
-    bool denoise = false;
-    bool debug_mode = true;
-    Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.005, 0.1, 1);
-    for (int i = 0; i < pointcloud->points_.size(); i++) {
-        pointcloud->points_[i] = {
-                pointcloud->points_[i].x() * transformation_matrix.x(),
-                pointcloud->points_[i].y() * transformation_matrix.y(),
-                pointcloud->points_[i].z() * transformation_matrix.z()};
-    }
+    //bool denoise = false;
+    //bool debug_mode = true;
+    //Eigen::Vector3d transformation_matrix = Eigen::Vector3d(0.005, 0.1, 1);
+    //for (int i = 0; i < pointcloud->points_.size(); i++) {
+    //    pointcloud->points_[i] = {
+    //            pointcloud->points_[i].x() * transformation_matrix.x(),
+    //            pointcloud->points_[i].y() * transformation_matrix.y(),
+    //            pointcloud->points_[i].z() * transformation_matrix.z()};
+    //}
     //     pipeline::DefectDetection::detect_CSAD(
     //             pointcloud, param, height_threshold, radius,
     //             min_points, transformation_matrix, denoise,
     //             debug_mode);
-    pipeline::GapStepDetection::detect_gap_step(
-            pointcloud, transformation_matrix, debug_mode);
+    //pipeline::GapStepDetection::detect_gap_step(
+    //       pointcloud, transformation_matrix, debug_mode);
 
     //     Eigen::MatrixXd M = Eigen::MatrixXd::Random(10, 10);
     //     // 手动添加异常值（稀疏矩阵部分）

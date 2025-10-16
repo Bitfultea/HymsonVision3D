@@ -26,7 +26,7 @@ double cloud_to_cloud_distance(const geometry::PointCloud& cloud,
     geometry::KDTree kdtree;
     kdtree.SetData(cloud_target);
 #pragma omp parallel for
-    for (size_t i = 0; i < cloud.points_.size(); i++) {
+    for (int i = 0; i < cloud.points_.size(); i++) {
         std::vector<int> indices(1);
         std::vector<double> dists(1);
         if (kdtree.SearchKNN(cloud.points_[i], 1, indices, dists) == 0) {
@@ -51,7 +51,7 @@ double cloud_to_cloud_distance(
             new geometry::PointCloud(points_target);
     kdtree.SetData(*cloud_target);
 #pragma omp parallel for
-    for (size_t i = 0; i < points.size(); i++) {
+    for (int i = 0; i < points.size(); i++) {
         std::vector<int> indices(1);
         std::vector<double> dists(1);
         if (kdtree.SearchKNN(points[i], 1, indices, dists) == 0) {

@@ -16,6 +16,7 @@ if(WIN32)
         Eigen3::Eigen
         ${OpenCV_LIBS}
         ${PCL_LIBRARIES}
+        TIFF::TIFF
         )
     set_target_properties(utility_lib PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
