@@ -256,17 +256,126 @@ void Cluster::RegionGrowingCluster(geometry::PointCloud& cloud,
 }
 
 int Cluster::PlanarCluster(geometry::PointCloud& cloud,
-                           float radius,
-                           float normal_degree,
-                           float curvature_threshold,
-                           bool use_curvature,
-                           int min_cluster_size,
-                           bool debug_mode) {
-    LOG_INFO(
-            "Start Planar Clusters with parameters: radius: {}, normal_degree: "
-            "{},  min_cluster_size: {}",
-            radius, normal_degree, min_cluster_size);
+float radius,
+float normal_degree,
+float curvature_threshold,
+bool use_curvature,
+int min_cluster_size,
+bool debug_mode) {
+LOG_INFO(
+"Start Planar Clusters with parameters: radius: {}, normal_degree: "
+"{}, min_cluster_size: {}",
+radius, normal_degree, min_cluster_size);
 
+geometry::KDTree kdtree;
+kdtree.SetData(cloud);
+// compute normals
+if (!cloud.HasNormals()) {
+geometry::KDTreeSearchParamRadius param(radius);
+feature::ComputeNormals_PCA(cloud, param);
+feature::orient_normals_towards_positive_z(cloud);
+}
+
+// compute curvature alternatively
+if (!cloud.HasCurvatures() && use_curvature) {
+double sum_angle = 0.0;
+int neighbor_count = 0;
+cloud.curvatures_.resize(cloud.points_.size());
+#pragma omp parallel for
+for (int i = 0; i < cloud.normals_.size(); i++) {
+std::vector<int> neighbors;
+std::vector<double> dists2;
+kdtree.SearchRadius(cloud.points_[i], radius, neighbors, dists2);
+for (size_t j = 0; j < neighbors.size(); j++) {
+if (i != j) {
+double product = cloud.normals_[i].dot(cloud.normals_[j]);
+double angle = acos(product);
+sum_angle += angle;
+neighbor_count++;
+}
+}
+geometry::curvature* curvature = new geometry::curvature;
+if (neighbor_count > 0) {
+curvature->total_curvature = sum_angle / neighbor_count;
+} else {
+curvature->total_curvature = 0.0;
+}
+cloud.curvatures_[i] = curvature;
+}
+}
+
+// Perform actual planar region growing
+std::vector<int> labels(cloud.points_.size(), -1);
+int cluster_label = 0;
+for (size_t i = 0; i < cloud.points_.size(); i++) {
+if (labels[i] != -1) continue;
+
+std::vector<int> cluster;
+std::unordered_set<int> visited;
+cluster.push_back(i);
+visited.insert(i);
+
+while (!cluster.empty()) {
+int current = cluster.back();
+cluster.pop_back();
+
+std::vector<int> neighbors;
+std::vector<double> dists2;
+kdtree.SearchRadius(cloud.points_[current], radius, neighbors,
+dists2);
+for (int neighbor : neighbors) {
+if (visited.find(neighbor) != visited.end()) continue;
+
+// check the normal degree
+double angle = acos(cloud.normals_[current].x() *
+cloud.normals_[neighbor].x() +
+cloud.normals_[current].y() *
+cloud.normals_[neighbor].y() +
+cloud.normals_[current].z() *
+cloud.normals_[neighbor].z());
+
+if (angle > normal_degree / 180.0 * M_PI) continue;
+
+// check the curvature
+if (use_curvature) {
+if (std::abs(cloud.curvatures_[neighbor]->total_curvature -
+cloud.curvatures_[current]->total_curvature) >
+curvature_threshold ||
+std::abs(cloud.intensities_[neighbor] -
+cloud.intensities_[current]) > 100)
+continue;
+}
+cluster.push_back(neighbor);
+visited.insert(neighbor);
+labels[neighbor] = cluster_label;
+}
+}
+
+if (visited.size() >= min_cluster_size) {
+cluster_label++;
+} else {
+for (int idx : visited) {
+labels[idx] = -1;
+}
+}
+}
+cloud.labels_ = labels;
+
+// colorise the different clusters
+if (debug_mode) paint_cluster(cloud, cluster_label);
+LOG_INFO("Done Compute Clusters: {}", cluster_label);
+return cluster_label;
+}
+
+
+void Cluster::RegionGrowingClusterRoiFromSeeds(
+        geometry::PointCloud& cloud,
+        const std::vector<int>& defect_seed_indices,  // ȱ����������
+        float radius,
+        float normal_degree,
+        float curvature_threshold,
+        int min_cluster_size,
+        bool debug_mode) {
     geometry::KDTree kdtree;
     kdtree.SetData(cloud);
     // compute normals
@@ -275,9 +384,8 @@ int Cluster::PlanarCluster(geometry::PointCloud& cloud,
         feature::ComputeNormals_PCA(cloud, param);
         feature::orient_normals_towards_positive_z(cloud);
     }
-
     // compute curvature alternatively
-    if (!cloud.HasCurvatures() && use_curvature) {
+    if (!cloud.HasCurvatures()) {
         double sum_angle = 0.0;
         int neighbor_count = 0;
         cloud.curvatures_.resize(cloud.points_.size());
@@ -304,16 +412,15 @@ int Cluster::PlanarCluster(geometry::PointCloud& cloud,
         }
     }
 
-    // Perform actual planar region growing
     std::vector<int> labels(cloud.points_.size(), -1);
     int cluster_label = 0;
-    for (size_t i = 0; i < cloud.points_.size(); i++) {
-        if (labels[i] != -1) continue;
 
+    for (int seed_idx : defect_seed_indices) {
+        if (labels[seed_idx] != -1) continue;  // �Ѿ���
         std::vector<int> cluster;
         std::unordered_set<int> visited;
-        cluster.push_back(i);
-        visited.insert(i);
+        cluster.push_back(seed_idx);
+        visited.insert(seed_idx);
 
         while (!cluster.empty()) {
             int current = cluster.back();
@@ -323,21 +430,18 @@ int Cluster::PlanarCluster(geometry::PointCloud& cloud,
             std::vector<double> dists2;
             kdtree.SearchRadius(cloud.points_[current], radius, neighbors,
                                 dists2);
+
             for (int neighbor : neighbors) {
                 if (visited.find(neighbor) != visited.end()) continue;
 
-                // check the normal degree
-                double angle = acos(cloud.normals_[current].x() *
-                                            cloud.normals_[neighbor].x() +
-                                    cloud.normals_[current].y() *
-                                            cloud.normals_[neighbor].y() +
-                                    cloud.normals_[current].z() *
-                                            cloud.normals_[neighbor].z());
-
+                // ���߽Ƕ�
+                double dot =
+                        cloud.normals_[current].dot(cloud.normals_[neighbor]);
+                double angle = acos(std::min(1.0, std::max(-1.0, dot)));
                 if (angle > normal_degree / 180.0 * M_PI) continue;
 
-                // check the curvature
-                if (use_curvature) {
+                // ���� + ǿ��
+                if (cloud.HasCurvatures() && cloud.HasIntensities()) {
                     if (std::abs(cloud.curvatures_[neighbor]->total_curvature -
                                  cloud.curvatures_[current]->total_curvature) >
                                 curvature_threshold ||
@@ -345,12 +449,19 @@ int Cluster::PlanarCluster(geometry::PointCloud& cloud,
                                  cloud.intensities_[current]) > 100)
                         continue;
                 }
+                if (cloud.HasCurvatures()) {
+                    if (std::abs(cloud.curvatures_[neighbor]->total_curvature -
+                                 cloud.curvatures_[current]->total_curvature) >
+                                curvature_threshold)
+                        continue;
+                }
+
+
                 cluster.push_back(neighbor);
                 visited.insert(neighbor);
                 labels[neighbor] = cluster_label;
             }
         }
-
         if (visited.size() >= min_cluster_size) {
             cluster_label++;
         } else {
@@ -360,12 +471,16 @@ int Cluster::PlanarCluster(geometry::PointCloud& cloud,
         }
     }
     cloud.labels_ = labels;
-
-    // colorise the different clusters
-    if (debug_mode) paint_cluster(cloud, cluster_label);
-    LOG_INFO("Done Compute Clusters: {}", cluster_label);
-    return cluster_label;
+    // ���ӻ�
+    if (debug_mode) {
+        std::cout << "value of cluster_label:" << cluster_label << std::endl;
+        paint_cluster_dll(cloud, cluster_label);
+    }
+    LOG_INFO("Done RegionGrowing From Seeds. Num clusters: {}", cluster_label);
 }
+
+
+
 
 }  // namespace core
 }  // namespace hymson3d

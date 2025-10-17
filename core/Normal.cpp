@@ -119,6 +119,75 @@ void ComputeNormals_PCA(geometry::PointCloud& cloud,
     }
 }
 
+void ComputeRotateNormals_PCA_Fast(geometry::PointCloud& cloud,
+                        const geometry::KDTreeSearchParam& param) {
+    const size_t N = cloud.points_.size();
+    const bool has_cov = cloud.HasCovariances();
+    const bool has_norm = cloud.HasNormals();
+
+    // 1) 预分配所有输出容器
+    cloud.covariances_.resize(N);
+    cloud.normals_.resize(N);
+    cloud.curvatures_.resize(N);
+
+    // 2) 只构建一次全局 KDTree
+    hymson3d::geometry::KDTree global_kdtree;
+    if (!has_cov) {
+        global_kdtree.SetData(cloud);
+    }
+
+    // 3) 并行计算协方差（共享 global_kdtree）
+    std::vector<Eigen::Matrix3d> covs(N);
+#pragma omp parallel for schedule(dynamic, 128)
+    for (int i = 0; i < static_cast<int>(N); i++) {
+        if (!has_cov) {
+            // 每个线程里临时申请 indices/d2，自动析构
+            std::vector<int> indices;
+            std::vector<double> d2;
+            int cnt =
+                    global_kdtree.Search(cloud.points_[i], param, indices, d2);
+            if (cnt >= 3) {
+                covs[i] = utility::ComputeCovariance(cloud.points_, indices);
+                if (covs[i].isIdentity(1e-4)) {
+                    covs[i] = cloud.covariances_[i];
+                }
+            } else {
+                covs[i].setIdentity();
+            }
+        } else {
+            covs[i] = cloud.covariances_[i];
+        }
+    }
+
+    //std::vector<geometry::curvature> curvs(N);
+    const Eigen::Vector3d orientation_reference =
+            Eigen::Vector3d(0.0, 0.0, 1.0);
+    // 4) 并行计算法线和曲率，直接 new curvature 保持原接口
+#pragma omp parallel for schedule(dynamic, 128)
+    for (int i = 0; i < static_cast<int>(N); i++) {
+        // FastEigen3x3 返回 (主特征向量, [λ0,λ1,λ2])
+        auto [dir, evals] = utility::mathtool::FastEigen3x3(covs[i]);
+        Eigen::Vector3d n = dir.normalized();
+
+        geometry::curvature* curvature = new geometry::curvature();
+        curvature->gaussian_curvature = evals[1] * evals[2];
+        curvature->mean_curvature = 0.5 * (evals[1] + evals[2]);
+        curvature->total_curvature = pow(evals[1], 2) + pow(evals[2], 2);
+        //curvs[i].gaussian_curvature = evals[1] * evals[2];
+        //curvs[i].mean_curvature = 0.5 * (evals[1] + evals[2]);
+        //curvs[i].total_curvature = evals[1] * evals[1] + evals[2] * evals[2];
+        if (n.norm() == 0.0) {
+            n = orientation_reference;
+        } else if (n.dot(orientation_reference) < 0.0) {
+            n *= -1.0;  // flip the normal
+        }
+        cloud.normals_[i] = n;
+        cloud.covariances_[i] = covs[i];
+        cloud.curvatures_[i] = curvature;
+    }
+}
+
+
 // TODO:oritent the normal w.r.t
 void orient_normals_towards_positive_z(geometry::PointCloud& cloud) {
     const Eigen::Vector3d orientation_reference =

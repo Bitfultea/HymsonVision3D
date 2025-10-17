@@ -1,10 +1,11 @@
 if(WIN32)
-    file(GLOB O3D_FILES "C:/Users/Administrator/Desktop/hym_test/HymsonVision3D/thirdparty/open3d/*.cpp")
-    file(GLOB C_FILES "C:/Users/Administrator/Desktop/hym_test/HymsonVision3D/thirdparty/open3d/*.c")
+    set(WIN_DIR "F:/qhchen")
+    file(GLOB O3D_FILES "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/*.cpp")
+    file(GLOB C_FILES "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/*.c")
     add_library(thirdparty_lib SHARED ${O3D_FILES} ${C_FILES})
     target_include_directories(thirdparty_lib PUBLIC
-        "C:/Users/Administrator/Desktop/hym_test/HymsonVision3D/thirdparty/open3d"
-        "C:/Users/Administrator/Desktop/hym_test/HymsonVision3D/thirdparty/open3d/Qhull/include"
+        "${WIN_DIR}/HymsonVision3D/thirdparty/open3d"
+        "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/Qhull/include"
     )
     target_link_libraries(thirdparty_lib nanoflann::nanoflann fmt::fmt  Qhull::qhullcpp Qhull::qhull_r)
 elseif(UNIX)
