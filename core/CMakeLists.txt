@@ -36,4 +36,11 @@ endif()
 if(WIN32)
     set_target_properties(core_lib PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+    install(TARGETS core_lib DESTINATION ${INSTALL_FOLDER}
+            RUNTIME_DEPENDENCIES
+                # rules
+                PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "windows"
+                POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
+                DIRECTORIES $<TARGET_FILE_DIR:my_app> /usr/lib
+    )
 endif()
