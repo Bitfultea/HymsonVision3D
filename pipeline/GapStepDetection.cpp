@@ -1448,6 +1448,7 @@ void GapStepDetection::compute_step_width_dll(
             if ((next_pt.x() - pt.x()) > 2*stepX) {
                 temp_width.push_back(next_pt.x() - pt.x());
             }
+            //oversampled_pts.emplace_back(pt);
         }
     } else {
         std::pair<Eigen::Vector2d, Eigen::Vector2d> left_line = line_segs[0];

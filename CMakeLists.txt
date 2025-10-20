@@ -134,29 +134,22 @@ add_subdirectory(pipeline)
 
 if(WIN32)
   set(INSTALL_FOLDER  "${CMAKE_CURRENT_SOURCE_DIR}/build/deploy")
-  set(CMAKE_INSTALL_PREFIX  ${INSTALL_FOLDER})
+  set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/build")
   # set(INSTALL_FOLDER  "deploy")
 
-  # Install all library targets with their runtime dependencies
-  install(TARGETS utility_lib pipeline core_lib geometry_3d_lib geometry_2d_lib thirdparty_lib
-          RUNTIME_DEPENDENCIES
-          PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
-          POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
-          RUNTIME DESTINATION ${INSTALL_FOLDER}
-          LIBRARY DESTINATION ${INSTALL_FOLDER}
-          ARCHIVE DESTINATION ${INSTALL_FOLDER})
+  # # Install all library targets with their runtime dependencies
+  # install(TARGETS utility_lib pipeline core_lib geometry_3d_lib geometry_2d_lib thirdparty_lib
+  #         RUNTIME_DEPENDENCIES
+  #         PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+  #         POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
+  #         RUNTIME DESTINATION ${INSTALL_FOLDER}
+  #         LIBRARY DESTINATION ${INSTALL_FOLDER}
+  #         ARCHIVE DESTINATION ${INSTALL_FOLDER})
   
-  # Install test executables with their runtime dependencies
-  install(TARGETS LoggerTest TorchTest TorchTest2 ConvertTiff CGAL_test
-          RUNTIME_DEPENDENCIES
-          PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
-          POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
-          RUNTIME DESTINATION ${INSTALL_FOLDER})
-
-  # Use vcpkg to install dependencies
-  if(COMMAND vcpkg_install_dependencies)
-    vcpkg_install_dependencies(TARGETS LoggerTest TorchTest TorchTest2 ConvertTiff CGAL_test
-                               DESTINATION ${INSTALL_FOLDER})
-  endif()
-  
+  # # Install test executables with their runtime dependencies
+  # install(TARGETS LoggerTest TorchTest TorchTest2 ConvertTiff CGAL_test
+  #         RUNTIME_DEPENDENCIES
+  #         PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+  #         POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
+  #         RUNTIME DESTINATION ${INSTALL_FOLDER})
 endif()
