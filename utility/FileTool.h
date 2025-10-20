@@ -1,4 +1,5 @@
 #pragma once
+#include <3D/Plane.h>
 #include <3D/PointCloud.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
@@ -27,6 +28,14 @@ void write_ply(const std::string& filename,
 void write_ply(const std::string& filename,
                geometry::PointCloud::Ptr pointcloud,
                FileFormat format = FileFormat::ASCII);
+void write_plane_mesh_ply(const std::string& filename,
+                          geometry::Plane& plane,
+                          double x_min,
+                          double x_max,
+                          double y_min,
+                          double y_max,
+                          int resolution);
+
 void read_ply(const std::string& filename,
               std::vector<Eigen::Vector3d>& points);
 void read_ply(const std::string& filename,

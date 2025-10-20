@@ -93,15 +93,38 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
         if (i == 2) bottom_points.emplace_back(cloud->points_[col * (row - 1)]);
         if (i == 2) bottom_points.emplace_back(cloud->points_[(col * row) - 1]);
     }
+    // for (auto pt : bottom_points) {
+    //     std::cout << pt << std::endl;
+    // }
     geometry::PointCloud::Ptr bot_cloud =
             std::make_shared<geometry::PointCloud>();
     bot_cloud->points_ = bottom_points;
     core::PlaneDetection pd;
-    geometry::Plane::Ptr bot_plane =
-            pd.fit_a_plane_ransc(*bot_cloud, 2, 4, 10, 0.9999999);
-
+    // geometry::Plane::Ptr bot_plane =
+    //         pd.fit_a_plane_ransc(*bot_cloud, 2, 4, 10, 0.9999999);
+    geometry::Plane::Ptr bot_plane = pd.fit_a_plane(*bot_cloud);
+    if (debug_mode) {
+        LOG_DEBUG(
+                "Bottom plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+                "{};",
+                bot_plane->center_.x(), bot_plane->center_.y(),
+                bot_plane->center_.z(), bot_plane->normal_.x(),
+                bot_plane->normal_.y(), bot_plane->normal_.z());
+        utility::write_plane_mesh_ply(
+                "bottom_plane.ply", *bot_plane, bot_cloud->GetMinBound().x(),
+                bot_cloud->GetMaxBound().x(), bot_cloud->GetMinBound().y(),
+                bot_cloud->GetMaxBound().y(), 100);
+    }
     geometry::Plane::Ptr central_plane =
             get_plane_in_range(cloud, central_plane_size);
+    if (debug_mode) {
+        utility::write_plane_mesh_ply(
+                "central_plane.ply", *central_plane,
+                central_plane->center_.x() - central_plane_size / 2,
+                central_plane->center_.x() + central_plane_size / 2,
+                central_plane->center_.y() - central_plane_size / 2,
+                central_plane->center_.y() + central_plane_size / 2, 100);
+    }
 
     std::pair<geometry::Plane::Ptr, geometry::Plane::Ptr> plane_pair;
     plane_pair.first = central_plane;
@@ -313,7 +336,8 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
     LOG_DEBUG("Inner rangepoints size: {}", points.size());
 
     geometry::Plane::Ptr plane = std::make_shared<geometry::Plane>();
-    plane->inlier_points_ = points;
+    core::PlaneDetection plane_detector;
+    plane = plane_detector.fit_a_plane(points);
     return plane;
 }
 }  // namespace pipeline

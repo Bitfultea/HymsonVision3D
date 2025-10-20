@@ -67,12 +67,13 @@ geometry::Plane::Ptr PlaneDetection::fit_a_plane(
     }
     weighted_dir /= weighted_dir.norm();  // normaliszed
     double d = -weighted_dir.dot(centroid);
-
+    // std::cout << "Plane Coefficients: d = " << d << std::endl;
     Eigen::Vector4d plane_coeff(weighted_dir.x(), weighted_dir.y(),
                                 weighted_dir.z(), d);
     geometry::Plane::Ptr plane = std::make_shared<geometry::Plane>();
     plane->coeff_ = plane_coeff;
     plane->normal_ = weighted_dir;
+    plane->center_ = centroid;
     return plane;
 }
 
