@@ -226,6 +226,76 @@ void write_ply(const std::string& filename,
     LOG_INFO("Finish Writing PointCloud to PLY");
 }
 
+void write_plane_mesh_ply(const std::string& filename,
+                          geometry::Plane& plane,
+                          double x_min,
+                          double x_max,
+                          double y_min,
+                          double y_max,
+                          int resolution) {
+    if (plane.coeff_ == Eigen::Vector4d::Zero()) {
+        LOG_ERROR("Plane coeff is zero");
+        return;
+    }
+
+    double a = plane.coeff_(0);
+    double b = plane.coeff_(1);
+    double c = plane.coeff_(2);
+    double d = plane.coeff_(3);
+    // std::cout << "Plane coeff: " << a << " " << b << " " << c << " " << d
+    //           << std::endl;
+    // std::cout << plane.coeff_ << std::endl;
+
+    if (std::abs(c) < 1e-10) {
+        LOG_ERROR("平面法向量z分量接近0，无法生成网格");
+        return;
+    }
+
+    std::vector<std::array<double, 3>> vertices;
+    std::vector<std::vector<int>> faces;
+
+    double x_step = (x_max - x_min) / (resolution - 1);
+    double y_step = (y_max - y_min) / (resolution - 1);
+
+    for (int i = 0; i < resolution; ++i) {
+        for (int j = 0; j < resolution; ++j) {
+            double x = x_min + i * x_step;
+            double y = y_min + j * y_step;
+            // z: z = -(ax + by + d) / c
+            double z = -(a * x + b * y + d) / c;
+            vertices.push_back({x, y, z});
+        }
+    }
+
+    // 生成面（三角形）
+    for (int i = 0; i < resolution - 1; ++i) {
+        for (int j = 0; j < resolution - 1; ++j) {
+            int idx0 = i * resolution + j;
+            int idx1 = idx0 + 1;
+            int idx2 = (i + 1) * resolution + j;
+            int idx3 = idx2 + 1;
+
+            // 每个格子生成两个三角形
+            faces.push_back({idx0, idx1, idx2});
+            faces.push_back({idx1, idx3, idx2});
+        }
+    }
+
+    // 创建PLY数据对象
+    happly::PLYData plyOut;
+
+    // 添加顶点
+    plyOut.addVertexPositions(vertices);
+
+    // 添加面
+    plyOut.addFaceIndices(faces);
+
+    // 写入文件
+    plyOut.write(filename, happly::DataFormat::Binary);
+
+    LOG_INFO("成功将平面网格写入PLY文件: {}", filename);
+}
+
 void read_ply(const std::string& filename,
               std::vector<Eigen::Vector3d>& points) {
     LOG_INFO("Start Reading PointCloud from PLY");
