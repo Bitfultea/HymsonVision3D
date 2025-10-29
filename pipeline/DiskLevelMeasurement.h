@@ -46,6 +46,12 @@ public:
             int min_planar_points = 100,
             bool debug_mode = true);
 
+    static void measure_pindisk_heightlevel(
+                std::shared_ptr<geometry::PointCloud> bottom_cloud,
+                std::shared_ptr<geometry::PointCloud> central_cloud,
+                DiskLevelMeasurementResult *result,
+                bool debug_mode);
+
 private:
     static void segment_plane_instances(
             std::shared_ptr<geometry::PointCloud> cloud,
