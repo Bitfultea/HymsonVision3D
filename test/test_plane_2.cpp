@@ -15,7 +15,10 @@ using namespace hymson3d;
 int main(int argc, char **argv) {
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
-    core::converter::tiff_to_pointcloud(argv[1], pointcloud,
+    std::string tiff_path = "F:\\TestData\\21_04_29_099_.tiff";
+    //core::converter::tiff_to_pointcloud(argv[1], pointcloud,
+    //                                    Eigen::Vector3d(1, 1, 400), false);
+    core::converter::tiff_to_pointcloud(tiff_path, pointcloud,
                                         Eigen::Vector3d(1, 1, 400), false);
 
     float radius = 5.0f;

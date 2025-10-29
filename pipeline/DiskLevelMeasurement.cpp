@@ -91,7 +91,7 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
         if (i == 0) bottom_points.emplace_back(cloud->points_[0]);
         if (i == 1) bottom_points.emplace_back(cloud->points_[col - 1]);
         if (i == 2) bottom_points.emplace_back(cloud->points_[col * (row - 1)]);
-        if (i == 2) bottom_points.emplace_back(cloud->points_[(col * row) - 1]);
+        if (i == 3) bottom_points.emplace_back(cloud->points_[(col * row) - 1]);
     }
     // for (auto pt : bottom_points) {
     //     std::cout << pt << std::endl;
@@ -124,6 +124,48 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
                 central_plane->center_.x() + central_plane_size / 2,
                 central_plane->center_.y() - central_plane_size / 2,
                 central_plane->center_.y() + central_plane_size / 2, 100);
+    }
+
+    std::pair<geometry::Plane::Ptr, geometry::Plane::Ptr> plane_pair;
+    plane_pair.first = central_plane;
+    plane_pair.second = bot_plane;
+    *result = DiskLevelMeasurement::calculate_planes_figure(plane_pair);
+}
+
+void DiskLevelMeasurement::measure_pindisk_heightlevel(
+        std::shared_ptr<geometry::PointCloud> bottom_cloud,
+        std::shared_ptr<geometry::PointCloud> central_cloud,
+        DiskLevelMeasurementResult *result,
+        bool debug_mode) {
+    core::PlaneDetection pd;
+    // geometry::Plane::Ptr bot_plane =
+    //         pd.fit_a_plane_ransc(*bot_cloud, 2, 4, 10, 0.9999999);
+    geometry::Plane::Ptr bot_plane = pd.fit_a_plane(*bottom_cloud);
+    if (debug_mode) {
+        LOG_DEBUG(
+                "Bottom plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+                "{};",
+                bot_plane->center_.x(), bot_plane->center_.y(),
+                bot_plane->center_.z(), bot_plane->normal_.x(),
+                bot_plane->normal_.y(), bot_plane->normal_.z());
+        utility::write_plane_mesh_ply(
+                "bottom_plane.ply", *bot_plane, bottom_cloud->GetMinBound().x(),
+                bottom_cloud->GetMaxBound().x(), bottom_cloud->GetMinBound().y(),
+                bottom_cloud->GetMaxBound().y(), 100);
+    }
+    geometry::Plane::Ptr central_plane = pd.fit_a_plane(*central_cloud);
+    if (debug_mode) {
+        LOG_DEBUG(
+        "Central plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+        "{};",
+        central_plane->center_.x(), central_plane->center_.y(),
+        central_plane->center_.z(), central_plane->normal_.x(),
+        central_plane->normal_.y(), central_plane->normal_.z());
+        utility::write_plane_mesh_ply(
+                "central_plane.ply", *central_plane,
+                central_cloud->GetMinBound().x(),
+                central_cloud->GetMaxBound().x(), central_cloud->GetMinBound().y(),
+                central_cloud->GetMaxBound().y(), 100);
     }
 
     std::pair<geometry::Plane::Ptr, geometry::Plane::Ptr> plane_pair;
