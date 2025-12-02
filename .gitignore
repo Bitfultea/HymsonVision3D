@@ -11,3 +11,7 @@ cmake-build-*
 /.vs
 test/test_tiff2ply.cpp
 test/test_gsd.cpp
+ml/yolo_3d/runs
+ml/yolo_3d/*.pt
+ml/yolo_3d/temp_inference.png
+ml/yolo_3d/__pycache__/pre_process_data.cpython-312.pyc

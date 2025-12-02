@@ -43,6 +43,7 @@ find_package(OpenCV REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Qhull REQUIRED)
 find_package(CUDAToolkit REQUIRED)
+find_package(CUDA REQUIRED)
 find_package(Torch REQUIRED)
 find_package(PCL REQUIRED)
 find_package(CGAL REQUIRED)
@@ -85,12 +86,15 @@ elseif(UNIX)
     ${PROJECT_SOURCE_DIR}/core
     ${PROJECT_SOURCE_DIR}/thirdparty
     ${PROJECT_SOURCE_DIR}/pipeline
+    ${PROJECT_SOURCE_DIR}/ml
+    # /usr/include/mkl # include intel mkl for eigen hpc
   )
 endif()
 
 include_directories(${INCLUDE_DIRS})
 include_directories(${gtest_SOURCE_DIR}/include )
 include_directories(${CGAL_INCLUDE_DIRS})
+include_directories(${CUDA_INCLUDE_DIRS})
 #include_directories("${vcpkg_root_dir}/fmt_x64-windows/include")
 #include_directories("${vcpkg_root_dir}/qhull_x64-windows/include")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/open3d")
@@ -126,10 +130,14 @@ if(BUILD_UNIT_TESTS)
   add_subdirectory(test) 
 endif()
 
+if(UNIX)
+  # add_definitions(-DEIGEN_USE_MKL_ALL)
+endif()
 add_subdirectory(utility)
 add_subdirectory(thirdparty)
 add_subdirectory(core)
 add_subdirectory(geometry)
+add_subdirectory(ml)
 add_subdirectory(pipeline)
 
 if(WIN32)
