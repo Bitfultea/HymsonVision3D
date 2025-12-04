@@ -14,6 +14,8 @@ namespace core {
 geometry::Plane::Ptr PlaneDetection::fit_a_plane(
         geometry::PointCloud& pointcloud) {
     Eigen::Vector3d centroid = pointcloud.GetCenter();
+    LOG_INFO("Fitting a plane with centroid {},{},{} to the point cloud...",
+             centroid.x(), centroid.y(), centroid.z());
 
     // Calculate full 3x3 covariance matrix, excluding symmetries:
     double xx = 0, xy = 0, xz = 0;

@@ -12,19 +12,20 @@
 
 using namespace hymson3d;
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
     core::converter::tiff_to_pointcloud(argv[1], pointcloud,
-                                        Eigen::Vector3d(1, 1, 400), false);
+                                        Eigen::Vector3d(1, 1, 200), false);
 
     float radius = 5.0f;
-    float normal_degree = 0.5;
+    float normal_degree = 1;
     float curvature_threshold = 0.0;
     bool use_curvature = false;
-    float central_plane_size = 200.0;
+    float central_plane_size = 250.0;
     float distance_threshold = 0.0;
     int min_planar_points = 2500;
+    int method = 1;
     bool debug_mode = true;
     geometry::KDTreeSearchParamRadius param(radius);
 
@@ -34,11 +35,15 @@ int main(int argc, char **argv) {
 
     auto start = std::chrono::high_resolution_clock::now();
     pipeline::DiskLevelMeasurementResult result;
-    // pipeline::DiskLevelMeasurement::measure_pindisk_heightlevel(
-    //         pointcloud, param, &result, central_plane_size, normal_degree,
-    //         distance_threshold, min_planar_points, debug_mode);
-    pipeline::DiskLevelMeasurement::measure_pindisk_heightlevel(
-            pointcloud, &result, central_plane_size, true);
+    pipeline::DiskLevelMeasurement::perform_measurement(
+            pointcloud, param, &result, central_plane_size, normal_degree,
+            distance_threshold, min_planar_points, method, debug_mode);
+    //     pipeline::DiskLevelMeasurement::measure_pindisk_heightlevel(
+    //             pointcloud, param, &result, central_plane_size,
+    //             normal_degree, distance_threshold, min_planar_points,
+    //             debug_mode);
+    //     pipeline::DiskLevelMeasurement::measure_pindisk_heightlevel(
+    //             pointcloud, &result, central_plane_size, debug_mode);
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> elapsed = end - start;

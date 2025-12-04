@@ -15,10 +15,36 @@
 namespace hymson3d {
 namespace pipeline {
 
-void DiskLevelMeasurement::measure_pindisk_heightlevel(
+bool DiskLevelMeasurement::perform_measurement(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,
-        DiskLevelMeasurementResult *result,
+        DiskLevelMeasurementResult* result,
+        float central_plane_size,
+        float normal_angle_threshold,
+        float distance_threshold,
+        int min_planar_points,
+        int method,
+        bool debug_mode) {
+    if (method == 0) {
+        measure_pindisk_heightlevel_auto(
+                cloud, param, result, central_plane_size,
+                normal_angle_threshold, distance_threshold, min_planar_points,
+                debug_mode);
+    } else if (method == 1) {
+        measure_pindisk_heightlevel_region(
+                cloud, param, result, central_plane_size,
+                normal_angle_threshold, distance_threshold, min_planar_points,
+                debug_mode);
+    } else {
+        LOG_ERROR("Invalid method");
+        return false;
+    }
+    return true;
+}
+void DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        geometry::KDTreeSearchParamRadius param,
+        DiskLevelMeasurementResult* result,
         float central_plane_size,
         float normal_angle_threshold,
         float distance_threshold,
@@ -78,10 +104,14 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
     *result = DiskLevelMeasurement::calculate_planes_figure(plane_pair);
 }
 
-void DiskLevelMeasurement::measure_pindisk_heightlevel(
+void DiskLevelMeasurement::measure_pindisk_heightlevel_region(
         std::shared_ptr<geometry::PointCloud> cloud,
-        DiskLevelMeasurementResult *result,
+        geometry::KDTreeSearchParamRadius param,
+        DiskLevelMeasurementResult* result,
         float central_plane_size,
+        float normal_angle_threshold,
+        float distance_threshold,
+        int min_planar_points,
         bool debug_mode) {
     int row = cloud->height_;
     int col = cloud->width_;
@@ -115,8 +145,12 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
                 bot_cloud->GetMaxBound().x(), bot_cloud->GetMinBound().y(),
                 bot_cloud->GetMaxBound().y(), 100);
     }
-    geometry::Plane::Ptr central_plane =
-            get_plane_in_range(cloud, central_plane_size);
+
+    bool use_ransc = true;
+    geometry::Plane::Ptr central_plane = get_plane_in_range(
+            cloud, param, central_plane_size, normal_angle_threshold,
+            distance_threshold, min_planar_points, use_ransc, debug_mode);
+
     if (debug_mode) {
         utility::write_plane_mesh_ply(
                 "central_plane.ply", *central_plane,
@@ -135,7 +169,7 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
 void DiskLevelMeasurement::segment_plane_instances(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,
-        std::vector<geometry::Plane::Ptr> &planes,
+        std::vector<geometry::Plane::Ptr>& planes,
         float normal_angle_threshold,
         int min_planar_points,
         bool debug_mode) {
@@ -179,7 +213,7 @@ void DiskLevelMeasurement::segment_plane_instances(
 
 void DiskLevelMeasurement::merge_plane_instances(
         std::shared_ptr<geometry::PointCloud> cloud,
-        std::vector<geometry::Plane::Ptr> &planes,
+        std::vector<geometry::Plane::Ptr>& planes,
         float plane_distance_threshold) {
     std::set<int> merged_idx;
     std::vector<geometry::Plane::Ptr> mergered_planes;
@@ -210,7 +244,7 @@ void DiskLevelMeasurement::merge_plane_instances(
 std::pair<geometry::Plane::Ptr, geometry::Plane::Ptr>
 DiskLevelMeasurement::identify_plane_instances(
         std::shared_ptr<geometry::PointCloud> cloud,
-        std::vector<geometry::Plane::Ptr> &planes,
+        std::vector<geometry::Plane::Ptr>& planes,
         float central_plane_size,
         bool detect_bottom_plane,
         bool debug_mode) {
@@ -246,17 +280,9 @@ DiskLevelMeasurement::identify_plane_instances(
                                   pow((plane_center.x() - centre_pt.x()), 2));
             Eigen::Vector3d dims = plane_cloud->GetExtend();
             bool size_ok = false;
-            // std::cout << "Plane " << i << ": " << distance << " " <<
-            // dims.x()
-            //           << " " << dims.y() << " " << dims.z() << " "
-            //           << central_plane_size << std::endl;
 
             if (dims.x() > 0.8 * central_plane_size &&
                 dims.x() < 1.2 * central_plane_size) {
-                // std::cout << dims.x() << " " << 0.8 * central_plane_size
-                // << "
-                // "
-                //           << 1.2 * central_plane_size << std::endl;
                 if (dims.y() > 0.8 * central_plane_size &&
                     dims.y() < 1.2 * central_plane_size) {
                     size_ok = true;
@@ -319,7 +345,14 @@ DiskLevelMeasurementResult DiskLevelMeasurement::calculate_planes_figure(
 }
 
 geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
-        geometry::PointCloud::Ptr cloud, float central_plane_size) {
+        geometry::PointCloud::Ptr cloud,
+        geometry::KDTreeSearchParamRadius param,
+        float central_plane_size,
+        float normal_angle_threshold,
+        float distance_threshold,
+        int min_planar_points,
+        bool use_ransac,
+        bool debug_mode) {
     Eigen::Vector3d centroid = cloud->GetCenter();
     double x_lower_bound = centroid[0] - central_plane_size / 2.0;
     double x_upper_bound = centroid[0] + central_plane_size / 2.0;
@@ -334,11 +367,43 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
         }
     }
     LOG_DEBUG("Inner rangepoints size: {}", points.size());
+    std::shared_ptr<geometry::PointCloud> region_cloud =
+            std::make_shared<geometry::PointCloud>();
+    region_cloud->points_ = points;
 
-    geometry::Plane::Ptr plane = std::make_shared<geometry::Plane>();
+    std::vector<geometry::Plane::Ptr> planes;
+    segment_plane_instances(region_cloud, param, planes, normal_angle_threshold,
+                            min_planar_points, debug_mode);
+    float closet_plane_distance = 20;
+    merge_plane_instances(region_cloud, planes, closet_plane_distance);
+    LOG_DEBUG("Plane instances size: {}", planes.size());
+
+    geometry::Plane::Ptr max_plane;
+    int max_pts = 0;
+    for (auto p : planes) {
+        if (p->inlier_points_.size() > max_pts) {
+            max_plane = p;
+            max_pts = p->inlier_points_.size();
+        }
+    }
+
+    if (debug_mode) {
+        utility::write_ply("centroid_pts.ply", max_plane->inlier_points_);
+    }
+
     core::PlaneDetection plane_detector;
-    plane = plane_detector.fit_a_plane(points);
-    return plane;
+    std::shared_ptr<geometry::Plane> output_plane;
+    if (!use_ransac) {
+        output_plane = plane_detector.fit_a_plane(max_plane->inlier_points_);
+    } else {
+        std::shared_ptr<geometry::PointCloud> central_cloud =
+                std::make_shared<geometry::PointCloud>();
+        central_cloud->points_ = max_plane->inlier_points_;
+        output_plane = plane_detector.fit_a_plane_ransc(*central_cloud, 2, 4,
+                                                        100, 0.9999999);
+    }
+
+    return output_plane;
 }
 }  // namespace pipeline
 }  // namespace hymson3d
