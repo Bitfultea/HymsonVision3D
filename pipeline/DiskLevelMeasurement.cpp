@@ -206,6 +206,9 @@ void DiskLevelMeasurement::segment_plane_instances(
     for (int i = 0; i < planes.size(); i++) {
         if (planes[i]->inlier_points_.size() > min_planar_points) {
             filtered_planes.emplace_back(planes[i]);
+        } else {
+            LOG_DEBUG("Plane {} is too small({} points). Removed.", i,
+                      planes[i]->inlier_points_.size());
         }
     }
     planes = filtered_planes;
@@ -217,6 +220,10 @@ void DiskLevelMeasurement::merge_plane_instances(
         float plane_distance_threshold) {
     std::set<int> merged_idx;
     std::vector<geometry::Plane::Ptr> mergered_planes;
+    if (planes.size() == 1) {
+        LOG_DEBUG("Only one plane detected. No need to merge.");
+        return;
+    }
     for (int i = 0; i < planes.size(); i++) {
         if (merged_idx.count(i)) {  // alreadt merged
             continue;
@@ -376,9 +383,14 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
                             min_planar_points, debug_mode);
     float closet_plane_distance = 20;
     merge_plane_instances(region_cloud, planes, closet_plane_distance);
-    LOG_DEBUG("Plane instances size: {}", planes.size());
 
-    geometry::Plane::Ptr max_plane;
+    LOG_DEBUG("Plane instances size: {}", planes.size());
+    if (planes.size() == 0) {
+        LOG_ERROR("No plane found in the region");
+        return nullptr;
+    }
+
+    geometry ::Plane::Ptr max_plane;
     int max_pts = 0;
     for (auto p : planes) {
         if (p->inlier_points_.size() > max_pts) {
