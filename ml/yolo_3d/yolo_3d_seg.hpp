@@ -3,6 +3,19 @@
 //
 #ifndef YOLO_3D_SEG_HPP
 #define YOLO_3D_SEG_HPP
+#ifdef _WIN32
+    #define NOMINMAX  // ∑¿÷π windows.h Œ€»æ std::min/max
+#ifdef min
+    #undef min
+#endif
+#ifdef max
+    #undef max
+#endif
+#endif
+
+
+#include <algorithm>  // for std::min, std::max
+#include <cmath>      // for std::round
 #include <fstream>
 
 #include "NvInferPlugin.h"

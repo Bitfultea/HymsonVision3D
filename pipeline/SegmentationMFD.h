@@ -31,6 +31,10 @@ public:
                           float score_thres = 0.25f,
                           float iou_thres = 0.65f,
                           bool debug_mode = false);
+    void run_segmentation_dll(cv::Mat& tiff_file_path,
+                          float score_thres = 0.25f,
+                          float iou_thres = 0.65f,
+                          bool debug_mode = false);
 
     void analysis_defetcts(std::vector<Defect>& defects);
     float get_masked_defect_height(cv::Rect mask);

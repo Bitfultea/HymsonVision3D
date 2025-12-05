@@ -26,6 +26,14 @@ void SegmentationMFD::run_segmentation(const std::string& tiff_file_path,
     model_->infer(tiff_image, score_thres, iou_thres, debug_mode);
 }
 
+void SegmentationMFD::run_segmentation_dll(cv::Mat& tiff_image,
+                                       float score_thres,
+                                       float iou_thres,
+                                       bool debug_mode) {
+    m_raw_tiff = tiff_image;
+    model_->infer(tiff_image, score_thres, iou_thres, debug_mode);
+}
+
 void SegmentationMFD::analysis_defetcts(std::vector<Defect>& defects) {
     std::vector<Object> objects = model_->get_objects();
     LOG_INFO("Detect {} objects", objects.size());

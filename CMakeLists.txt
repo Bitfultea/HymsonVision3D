@@ -74,6 +74,7 @@ if(WIN32)
     ${PROJECT_SOURCE_DIR}/core
     ${PROJECT_SOURCE_DIR}/thirdparty
     ${PROJECT_SOURCE_DIR}/pipeline
+    ${PROJECT_SOURCE_DIR}/ml
     "'D:/software/opencv-4.8.0/build/include"
     ${vcpkg_include_dir}
     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
