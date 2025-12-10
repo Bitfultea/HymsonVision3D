@@ -119,7 +119,7 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
             }
             depthImage = depthImage / hitcount;
             break;
-        case Mode::FAR:
+        case Mode::FARR:
 #pragma omp parallel for
             // use z buffer but still only consider orthographic projection
             for (int i = 0; i < pointcloud->points_.size(); ++i) {

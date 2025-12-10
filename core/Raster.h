@@ -15,7 +15,7 @@ public:
         : frame_width_(frame_width),
           frame_height_(frame_height),
           camera_(camera) {}
-    enum Mode { AVE = 0, FAR = 1, NEAREST = 2, SUM = 3 };
+    enum Mode { AVE = 0, FARR = 1, NEAREST = 2, SUM = 3 };
 
 public:
     void set_camera(Camera::Ptr camera) { camera_ = camera; }
