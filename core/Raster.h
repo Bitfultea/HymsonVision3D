@@ -1,8 +1,9 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
-#include "fmtfallback.h"
+
 #include "3D/PointCloud.h"
 #include "Camera.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace core {
@@ -24,11 +25,15 @@ public:
                              bool use_z_buffer = false);
     cv::Mat project_to_frame(geometry::PointCloud::Ptr pointcloud,
                              Mode mode = Mode::AVE);
+    cv::Mat project_to_feature_frame(const cv::Mat& tiff_image);
     cv::Mat simple_projection(geometry::PointCloud::Ptr pointcloud);
     cv::Mat simple_projection_x(geometry::PointCloud::Ptr pointcloud);
 
 private:
     void cal_ortho_proj_intrinsics(geometry::PointCloud::Ptr pointcloud);
+    cv::Mat robust_normalize(const cv::Mat& src,
+                             double lower_percent = 0.005,
+                             double upper_percent = 0.995);
 
 public:
     int frame_width_;

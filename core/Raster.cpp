@@ -186,6 +186,57 @@ cv::Mat PointCloudRaster::project_to_frame(geometry::PointCloud::Ptr pointcloud,
 
     return depthImage;
 }
+cv::Mat PointCloudRaster::robust_normalize(const cv::Mat& src,
+                                           double lower_percent,
+                                           double upper_percent) {
+    cv::Mat flat;
+    src.reshape(1, 1).convertTo(flat, CV_32F);
+    std::vector<float> pixels = flat;
+
+    std::sort(pixels.begin(), pixels.end());
+    float lower = pixels[static_cast<int>(pixels.size() * lower_percent)];
+    float upper = pixels[static_cast<int>(pixels.size() * upper_percent)];
+
+    cv::Mat clipped;
+    cv::threshold(src, clipped, upper, upper, cv::THRESH_TRUNC);
+    cv::max(clipped, lower, clipped);
+
+    cv::Mat norm_img;
+    if (upper - lower > 1e-6) {
+        clipped.convertTo(norm_img, CV_8U, 255.0 / (upper - lower),
+                          -lower * 255.0 / (upper - lower));
+    } else {
+        norm_img = cv::Mat::zeros(src.size(), CV_8U);
+    }
+    return norm_img;
+}
+
+cv::Mat PointCloudRaster::project_to_feature_frame(const cv::Mat& tiff_image) {
+    cv::Mat raw_f;
+    tiff_image.convertTo(raw_f, CV_32F);
+
+    // Ch1: Height
+    cv::Mat ch_height = robust_normalize(raw_f);
+
+    // Ch2: Gradient
+    cv::Mat gx, gy, grad;
+    cv::Sobel(raw_f, gx, CV_32F, 1, 0, 3);
+    cv::Sobel(raw_f, gy, CV_32F, 0, 1, 3);
+    cv::magnitude(gx, gy, grad);
+    cv::Mat ch_grad = robust_normalize(grad, 0.0, 0.98);
+
+    // Ch3: Texture (CLAHE)
+    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+    cv::Mat ch_texture;
+    clahe->apply(ch_height, ch_texture);
+
+    // Merge
+    cv::Mat merged;
+    std::vector<cv::Mat> channels = {ch_height, ch_grad, ch_texture};
+    cv::merge(channels, merged);  // BGR for OpenCV
+
+    return merged;
+}
 
 // set camera at z-positive direction above the center of pointcloud
 cv::Mat PointCloudRaster::simple_projection(

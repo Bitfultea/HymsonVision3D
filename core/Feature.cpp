@@ -66,6 +66,74 @@ Eigen::MatrixXf compute_fpfh(geometry::PointCloud& cloud) {
     return fpfh_data;
 }
 
+/**
+ * @brief 检测图像中的绿色圆环并返回其中心坐标
+ *
+ * 该函数通过在HSV色彩空间中识别绿色区域来检测图像中的绿色圆环。
+ * 它会找到最大的绿色轮廓，并拟合一个椭圆来确定圆环的位置。
+ *
+ * @param img 输入的彩色图像(BGR格式)
+ * @param debug_mode 是否启用调试模式，启用时会在原图上绘制检测结果并保存到文件
+ * @return std::pair<bool, cv::Point2f> 第一个元素表示是否成功检测到圆环，
+ *         第二个元素是圆环中心点的坐标。如果未检测到圆环，则返回(false, (0,0))
+ */
+std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
+                                               bool debug_mode) {
+    if (img.empty()) {
+        LOG_ERROR("Image is empty");
+        return {false, cv::Point2f(0, 0)};
+    }
+
+    // H(色相) : 35 - 85(涵盖浅绿到深绿)
+    // S(饱和度) : 43 - 255(只要不是太灰)
+    // V(亮度) : 46 - 255(只要不是太黑)
+    cv::Scalar lower_green(cv::Scalar(35, 43, 46));
+    cv::Scalar upper_green(cv::Scalar(85, 255, 255));
+    cv::Mat kernel(cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)));
+
+    cv::Mat hsv;
+    cv::cvtColor(img, hsv, cv::COLOR_BGR2HSV);
+
+    cv::Mat mask;
+    cv::inRange(hsv, lower_green, upper_green, mask);
+
+    // denoise
+    cv::Mat maskClean;
+    cv::morphologyEx(mask, maskClean, cv::MORPH_OPEN, kernel);
+
+    // find contours
+    std::vector<std::vector<cv::Point>> contours;
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours(maskClean, contours, hierarchy, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
+
+    if (!contours.empty()) {
+        // find the maximum contour
+        auto largestContourIt = std::max_element(
+                contours.begin(), contours.end(),
+                [](const std::vector<cv::Point>& a,
+                   const std::vector<cv::Point>& b) {
+                    return cv::contourArea(a) < cv::contourArea(b);
+                });
+
+        cv::RotatedRect ellipse = cv::fitEllipse(*largestContourIt);
+        cv::Point2f center = ellipse.center;
+
+        // draw the ellipse
+        if (debug_mode) {
+            cv::ellipse(img, ellipse, cv::Scalar(0, 255, 0), 2);    // ellipse
+            cv::circle(img, center, 5, cv::Scalar(0, 0, 255), -1);  // centre
+            cv::imwrite("circle_location.jpg", img);
+        }
+        LOG_INFO("圆环中心坐标: ({},{} )", static_cast<int>(center.x),
+                 static_cast<int>(center.y));
+
+        return {true, center};
+    }
+
+    return {false, cv::Point2f(0, 0)};
+}
+
 }  // namespace feature
 }  // namespace core
 }  // namespace hymson3d

@@ -11,6 +11,7 @@
 #include "Logger.h"
 #include "MathTool.h"
 #include "Normal.h"
+#include "Raster.h"
 
 namespace hymson3d {
 namespace pipeline {
@@ -19,6 +20,7 @@ bool DiskLevelMeasurement::perform_measurement(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,
         DiskLevelMeasurementResult* result,
+        std::pair<bool, cv::Point2f> disk_centre,
         float central_plane_size,
         float normal_angle_threshold,
         float distance_threshold,
@@ -27,12 +29,12 @@ bool DiskLevelMeasurement::perform_measurement(
         bool debug_mode) {
     if (method == 0) {
         measure_pindisk_heightlevel_auto(
-                cloud, param, result, central_plane_size,
+                cloud, param, result, disk_centre, central_plane_size,
                 normal_angle_threshold, distance_threshold, min_planar_points,
                 debug_mode);
     } else if (method == 1) {
         measure_pindisk_heightlevel_region(
-                cloud, param, result, central_plane_size,
+                cloud, param, result, disk_centre, central_plane_size,
                 normal_angle_threshold, distance_threshold, min_planar_points,
                 debug_mode);
     } else {
@@ -41,10 +43,13 @@ bool DiskLevelMeasurement::perform_measurement(
     }
     return true;
 }
+
+// slow but fully automatic
 void DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,
         DiskLevelMeasurementResult* result,
+        std::pair<bool, cv::Point2f> disk_centre,
         float central_plane_size,
         float normal_angle_threshold,
         float distance_threshold,
@@ -104,10 +109,12 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
     *result = DiskLevelMeasurement::calculate_planes_figure(plane_pair);
 }
 
+// need to
 void DiskLevelMeasurement::measure_pindisk_heightlevel_region(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,
         DiskLevelMeasurementResult* result,
+        std::pair<bool, cv::Point2f> disk_centre,
         float central_plane_size,
         float normal_angle_threshold,
         float distance_threshold,
@@ -147,9 +154,10 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel_region(
     }
 
     bool use_ransc = true;
-    geometry::Plane::Ptr central_plane = get_plane_in_range(
-            cloud, param, central_plane_size, normal_angle_threshold,
-            distance_threshold, min_planar_points, use_ransc, debug_mode);
+    geometry::Plane::Ptr central_plane =
+            get_plane_in_range(cloud, param, disk_centre, central_plane_size,
+                               normal_angle_threshold, distance_threshold,
+                               min_planar_points, use_ransc, debug_mode);
 
     if (debug_mode) {
         utility::write_plane_mesh_ply(
@@ -354,13 +362,20 @@ DiskLevelMeasurementResult DiskLevelMeasurement::calculate_planes_figure(
 geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
         geometry::PointCloud::Ptr cloud,
         geometry::KDTreeSearchParamRadius param,
+        std::pair<bool, cv::Point2f> disk_centre,
         float central_plane_size,
         float normal_angle_threshold,
         float distance_threshold,
         int min_planar_points,
         bool use_ransac,
         bool debug_mode) {
-    Eigen::Vector3d centroid = cloud->GetCenter();
+    Eigen::Vector3d centroid;
+    if (disk_centre.first) {
+        centroid =
+                Eigen::Vector3d(disk_centre.second.x, disk_centre.second.y, 0);
+    } else {
+        centroid = cloud->GetCenter();
+    }
     double x_lower_bound = centroid[0] - central_plane_size / 2.0;
     double x_upper_bound = centroid[0] + central_plane_size / 2.0;
     double y_lower_bound = centroid[1] - central_plane_size / 2.0;

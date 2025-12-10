@@ -85,9 +85,9 @@ def convert_tiff_to_3channel(tiff_path, output_path):
 # --- 批量处理示例 ---
 if __name__ == "__main__":
     # 假设你的原始tiff在 'raw_tiffs' 文件夹，处理后存入 'dataset/images/train'
-    input_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/raw_tiff")
-    output_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/processed_image")
-    tiff_save = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/rename_tiff")
+    input_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/collection")
+    output_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/preprocessed")
+    tiff_save = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/rename")
     output_dir.mkdir(parents=True, exist_ok=True)
     id = 0
     for file in input_dir.glob("*.tif*"):
