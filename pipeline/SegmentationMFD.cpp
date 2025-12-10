@@ -36,6 +36,10 @@ void SegmentationMFD::analysis_defetcts(std::vector<Defect>& defects) {
         // area
         defect.area_bbox = obj.rect.area();
         defect.area_mask_pixel = cv::countNonZero(obj.boxMask);
+        // position
+        defect.center = (obj.rect.tl() + obj.rect.br()) / 2;
+        defect.half_h = obj.rect.height / 2.0f;
+        defect.half_w = obj.rect.width / 2.0f;
         // label
         defect.label_id = obj.label;
         std::string label = ml::CLASS_NAMES[obj.label];

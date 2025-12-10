@@ -9,6 +9,9 @@ struct Defect {
     int area_mask_pixel;
     float area_bbox;
     float height;
+    cv::Point2i center;
+    float half_w;
+    float half_h;
     std::string label;
     int label_id;
 };

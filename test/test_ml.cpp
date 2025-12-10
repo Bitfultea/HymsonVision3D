@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
     // infer params
     float score_thres = 0.4f;
     float iou_thres = 0.65f;
-    bool debug_mode = false;
+    bool debug_mode = true;
     segmentation_mfd.run_segmentation(tiff_path, score_thres, iou_thres,
                                       debug_mode);
 
@@ -44,8 +44,9 @@ int main(int argc, char** argv) {
     segmentation_mfd.analysis_defetcts(defects);
 
     for (auto& defect : defects) {
-        LOG_INFO("Defect: {}\n area:{}\n height:{}", defect.label,
-                 defect.area_bbox, defect.height);
+        LOG_INFO("Defect: {};  area:{}; height:{}; centre:[{},{}]",
+                 defect.label, defect.area_bbox, defect.height, defect.center.x,
+                 defect.center.y);
     }
 
     LOG_INFO("Segmentation done.");
