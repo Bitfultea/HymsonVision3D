@@ -174,6 +174,112 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel_region(
     *result = DiskLevelMeasurement::calculate_planes_figure(plane_pair);
 }
 
+void DiskLevelMeasurement::measure_pindisk_heightlevel_region_dll(
+        std::shared_ptr<geometry::PointCloud> bottom_cloud,
+        std::shared_ptr<geometry::PointCloud> central_cloud,
+        DiskLevelMeasurementResult* result,
+        geometry::KDTreeSearchParamRadius param,
+        float normal_angle_threshold,
+        float distance_threshold,
+        int min_planar_points,
+        bool debug_mode) {
+    core::PlaneDetection pd;
+    // geometry::Plane::Ptr bot_plane =
+    //         pd.fit_a_plane_ransc(*bot_cloud, 2, 4, 10, 0.9999999);
+    geometry::Plane::Ptr bot_plane = pd.fit_a_plane(*bottom_cloud);
+    if (debug_mode) {
+        LOG_DEBUG(
+                "Bottom plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+                "{};",
+                bot_plane->center_.x(), bot_plane->center_.y(),
+                bot_plane->center_.z(), bot_plane->normal_.x(),
+                bot_plane->normal_.y(), bot_plane->normal_.z());
+        utility::write_plane_mesh_ply(
+                "bottom_plane.ply", *bot_plane, bottom_cloud->GetMinBound().x(),
+                bottom_cloud->GetMaxBound().x(), bottom_cloud->GetMinBound().y(),
+                bottom_cloud->GetMaxBound().y(), 100);
+    }
+
+    bool use_ransc = true;
+    geometry::Plane::Ptr central_plane =
+            get_plane_in_range_all(
+            central_cloud, param, normal_angle_threshold,
+            distance_threshold, min_planar_points, use_ransc, debug_mode);
+
+    if (debug_mode) {
+        LOG_DEBUG(
+                "Central plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+                "{};",
+                central_plane->center_.x(), central_plane->center_.y(),
+                central_plane->center_.z(), central_plane->normal_.x(),
+                central_plane->normal_.y(), central_plane->normal_.z());
+        utility::write_plane_mesh_ply("central_plane.ply", *central_plane,
+                                      central_cloud->GetMinBound().x(),
+                                      central_cloud->GetMaxBound().x(),
+                                      central_cloud->GetMinBound().y(),
+                                      central_cloud->GetMaxBound().y(), 100);
+    }
+
+    std::pair<geometry::Plane::Ptr, geometry::Plane::Ptr> plane_pair;
+    plane_pair.first = central_plane;
+    plane_pair.second = bot_plane;
+    *result = DiskLevelMeasurement::calculate_planes_figure(plane_pair);
+}
+
+void DiskLevelMeasurement::measure_pindisk_heightlevel_region_dllv2(
+        std::vector<Eigen::Vector3d> bottom_points,
+        std::shared_ptr<geometry::PointCloud> central_cloud,
+        DiskLevelMeasurementResult* result,
+        geometry::KDTreeSearchParamRadius param,
+        float normal_angle_threshold,
+        float distance_threshold,
+        int min_planar_points,
+        bool debug_mode) {
+    geometry::PointCloud::Ptr bottom_cloud =
+            std::make_shared<geometry::PointCloud>();
+    bottom_cloud->points_ = bottom_points;
+    core::PlaneDetection pd;
+    // geometry::Plane::Ptr bot_plane =
+    //         pd.fit_a_plane_ransc(*bot_cloud, 2, 4, 10, 0.9999999);
+    geometry::Plane::Ptr bot_plane = pd.fit_a_plane(*bottom_cloud);
+    if (debug_mode) {
+        LOG_DEBUG(
+                "Bottom plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+                "{};",
+                bot_plane->center_.x(), bot_plane->center_.y(),
+                bot_plane->center_.z(), bot_plane->normal_.x(),
+                bot_plane->normal_.y(), bot_plane->normal_.z());
+        utility::write_plane_mesh_ply("bottom_plane.ply", *bot_plane,
+                                      bottom_cloud->GetMinBound().x(),
+                                      bottom_cloud->GetMaxBound().x(),
+                                      bottom_cloud->GetMinBound().y(),
+                                      bottom_cloud->GetMaxBound().y(), 100);
+    }
+
+    bool use_ransc = true;
+    geometry::Plane::Ptr central_plane = get_plane_in_range_all(
+            central_cloud, param, normal_angle_threshold, distance_threshold,
+            min_planar_points, use_ransc, debug_mode);
+
+    if (debug_mode) {
+        LOG_DEBUG(
+                "Central plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+                "{};",
+                central_plane->center_.x(), central_plane->center_.y(),
+                central_plane->center_.z(), central_plane->normal_.x(),
+                central_plane->normal_.y(), central_plane->normal_.z());
+        utility::write_plane_mesh_ply("central_plane.ply", *central_plane,
+                                      central_cloud->GetMinBound().x(),
+                                      central_cloud->GetMaxBound().x(),
+                                      central_cloud->GetMinBound().y(),
+                                      central_cloud->GetMaxBound().y(), 100);
+    }
+
+    std::pair<geometry::Plane::Ptr, geometry::Plane::Ptr> plane_pair;
+    plane_pair.first = central_plane;
+    plane_pair.second = bot_plane;
+    *result = DiskLevelMeasurement::calculate_planes_figure(plane_pair);
+}
 void DiskLevelMeasurement::measure_pindisk_heightlevel(
         std::shared_ptr<geometry::PointCloud> bottom_cloud,
         std::shared_ptr<geometry::PointCloud> central_cloud,
@@ -440,6 +546,56 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
                             min_planar_points, debug_mode);
     float closet_plane_distance = 20;
     merge_plane_instances(region_cloud, planes, closet_plane_distance);
+
+    LOG_DEBUG("Plane instances size: {}", planes.size());
+    if (planes.size() == 0) {
+        LOG_ERROR("No plane found in the region");
+        return nullptr;
+    }
+
+    geometry ::Plane::Ptr max_plane;
+    int max_pts = 0;
+    for (auto p : planes) {
+        if (p->inlier_points_.size() > max_pts) {
+            max_plane = p;
+            max_pts = p->inlier_points_.size();
+        }
+    }
+
+    if (debug_mode) {
+        utility::write_ply("centroid_pts.ply", max_plane->inlier_points_);
+    }
+
+    core::PlaneDetection plane_detector;
+    std::shared_ptr<geometry::Plane> output_plane;
+    if (!use_ransac) {
+        output_plane = plane_detector.fit_a_plane(max_plane->inlier_points_);
+    } else {
+        std::shared_ptr<geometry::PointCloud> central_cloud =
+                std::make_shared<geometry::PointCloud>();
+        central_cloud->points_ = max_plane->inlier_points_;
+        output_plane = plane_detector.fit_a_plane_ransc(*central_cloud, 2, 4,
+                                                        100, 0.9999999);
+    }
+
+    return output_plane;
+}
+geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range_all(
+        std::shared_ptr<geometry::PointCloud> region_cloud,
+        geometry::KDTreeSearchParamRadius param,
+        float normal_angle_threshold,
+        float distance_threshold,
+        int min_planar_points,
+        bool use_ransac,
+        bool debug_mode) {
+
+    std::vector<geometry::Plane::Ptr> planes;
+    segment_plane_instances(
+            region_cloud, param, planes, normal_angle_threshold,
+                            min_planar_points, debug_mode);
+    float closet_plane_distance = 20;
+    merge_plane_instances(region_cloud, planes,
+                                                closet_plane_distance);
 
     LOG_DEBUG("Plane instances size: {}", planes.size());
     if (planes.size() == 0) {
