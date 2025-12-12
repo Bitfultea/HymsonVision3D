@@ -17,12 +17,10 @@ int main(int argc, char** argv) {
     }
 
     std::string tiff_path = argv[1];
-    //std::string tiff_path = "F:\\TestData\\Yolo3d\\CapTime_Dev7_2025_11_23_00_57_49_541_CurTime_00_57_49_869_0B5CBP2MBL0P8MFBD1012148.tiff";
 
     LOG_INFO("Starting segmentation...");
 
     std::string engine_file = "../ml/yolo_3d/tools/hymson3d-seg.engine";
-    //std::string engine_file = "F:\\TestData\\Yolo3d\\hymson3d-seg.engine";
 
     // Model parameters
     cv::Size image_size = cv::Size(960, 960);

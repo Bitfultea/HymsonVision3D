@@ -49,8 +49,9 @@ void Segmentation_ML_3d::infer(const cv::Mat tiff_image,
                       end - start)
                       .count() /
               1000.;
-
-    cv::imwrite("res.png", res);
+    if (debug_mode) {
+        cv::imwrite("res.png", res);
+    }
 }
 
 std::vector<Object> Segmentation_ML_3d::get_objects() { return m_objs; }
