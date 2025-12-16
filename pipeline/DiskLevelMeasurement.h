@@ -24,7 +24,7 @@ public:
                                     int method = 0,
                                     bool debug_mode = true);
 
-    static void measure_pindisk_heightlevel_auto(
+    static bool measure_pindisk_heightlevel_auto(
             std::shared_ptr<geometry::PointCloud> cloud,
             geometry::KDTreeSearchParamRadius param,
             DiskLevelMeasurementResult* result,
@@ -35,7 +35,7 @@ public:
             int min_planar_points = 100,
             bool debug_mode = true);
 
-    static void measure_pindisk_heightlevel_region(
+    static bool measure_pindisk_heightlevel_region(
             std::shared_ptr<geometry::PointCloud> cloud,
             geometry::KDTreeSearchParamRadius param,
             DiskLevelMeasurementResult* result,
@@ -45,7 +45,8 @@ public:
             float distance_threshold = 0.0,
             int min_planar_points = 100,
             bool debug_mode = true);
-    static void measure_pindisk_heightlevel_region_dll(
+
+    static bool measure_pindisk_heightlevel_region_dll(
             std::shared_ptr<geometry::PointCloud> bottom_cloud,
             std::shared_ptr<geometry::PointCloud> central_cloud,
             DiskLevelMeasurementResult* result,
@@ -54,6 +55,7 @@ public:
             float distance_threshold,
             int min_planar_points,
             bool debug_mode);
+
     static void measure_pindisk_heightlevel_region_dllv2(
             std::vector<Eigen::Vector3d> bottom_points,
             std::shared_ptr<geometry::PointCloud> central_cloud,
@@ -65,10 +67,10 @@ public:
             bool debug_mode);
 
     static void measure_pindisk_heightlevel(
-                std::shared_ptr<geometry::PointCloud> bottom_cloud,
-                std::shared_ptr<geometry::PointCloud> central_cloud,
-                DiskLevelMeasurementResult *result,
-                bool debug_mode);
+            std::shared_ptr<geometry::PointCloud> bottom_cloud,
+            std::shared_ptr<geometry::PointCloud> central_cloud,
+            DiskLevelMeasurementResult* result,
+            bool debug_mode);
 
 private:
     static void segment_plane_instances(
@@ -107,7 +109,7 @@ private:
             bool use_ransac = true,
             bool debug_mode = true);
 
-   static geometry::Plane::Ptr get_plane_in_range_all(
+    static geometry::Plane::Ptr get_plane_in_range_all(
             std::shared_ptr<geometry::PointCloud> region_cloud,
             geometry::KDTreeSearchParamRadius param,
             float normal_angle_threshold = 0.0,
