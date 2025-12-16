@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
     float normal_degree = 1;
     float curvature_threshold = 0.0;
     bool use_curvature = false;
-    float central_plane_size = 50.0;
+    float central_plane_size = 200.0;
     float distance_threshold = 0.0;
     int min_planar_points = 500;
     int method = 1;

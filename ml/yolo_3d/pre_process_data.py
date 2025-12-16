@@ -81,19 +81,67 @@ def convert_tiff_to_3channel(tiff_path, output_path):
     cv2.imwrite(output_path, merged_img)
     
 
+def convert_tiff_to_3channel_convex(tiff_path, output_path):
+    """
+    新版预处理：保留凹凸方向信息
+    Channel 0: 高度图
+    Channel 1: Sobel X (水平梯度)
+    Channel 2: Sobel Y (垂直梯度)
+    """
+    # 1. 读取原始数据
+    raw_data = tiff.imread(tiff_path)
+    raw_data = np.nan_to_num(raw_data, nan=0.0)
+
+    # 2. 预先截断 (去除飞点对梯度的干扰)
+    # 如果不先截断，一个飞点会导致整张图的梯度极小
+    lower_limit = np.percentile(raw_data, 0.1)
+    upper_limit = np.percentile(raw_data, 99.9)
+    raw_clamped = np.clip(raw_data, lower_limit, upper_limit)
+
+    # --- Channel 1: 基础高度图 ---
+    norm_height = robust_normalize(raw_clamped, 0, 100) # 既然已经clip过了，直接归一化
+
+    # --- Channel 2: Sobel X (水平方向) ---
+    # dx > 0 表示上坡，dx < 0 表示下坡
+    # 结果包含正负小数
+    sobel_x = cv2.Sobel(raw_clamped, cv2.CV_64F, 1, 0, ksize=3)
+    
+    # 关键点：如何把正负值映射到 0-255？
+    # 直接使用 robust_normalize 会自动把最负的值映射为0，最正的映射为255
+    # 平坦区域大约会落在 128 左右（灰色）
+    norm_sobel_x = robust_normalize(sobel_x, 0.1, 99.9)
+
+    # --- Channel 3: Sobel Y (垂直方向) ---
+    sobel_y = cv2.Sobel(raw_clamped, cv2.CV_64F, 0, 1, ksize=3)
+    norm_sobel_y = robust_normalize(sobel_y, 0.1, 99.9)
+
+    # --- 合并与保存 ---
+    # 这种组合下，原本"看起来一样"的圆环，现在会变成"一边亮一边暗"的立体球感
+    merged_img = cv2.merge([norm_height, norm_sobel_x, norm_sobel_y])
+    
+    cv2.imwrite(output_path, merged_img)
+    # print(f"Processed: {output_path}")
+
 
 # --- 批量处理示例 ---
 if __name__ == "__main__":
     # 假设你的原始tiff在 'raw_tiffs' 文件夹，处理后存入 'dataset/images/train'
-    input_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/collection")
-    output_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/preprocessed")
+    # input_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/collection")
+    # output_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/preprocessed")
+    input_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/rename_tiff")
+    output_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/whole_processed_with_new_alg_2")
+
     tiff_save = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/rename")
     output_dir.mkdir(parents=True, exist_ok=True)
-    id = 0
+    # id = 0
     for file in input_dir.glob("*.tif*"):
+        file_name = os.path.splitext(file)
+        id = file_name[0].split("/")[-1]
+        # print(id)
         save_name = output_dir / (str(id)+ ".png")
         #copy the file to destination
-        save_tiff = tiff_save / (str(id)+ ".tif")
-        shutil.copy(file, save_tiff)
-        convert_tiff_to_3channel(str(file), str(save_name))
-        id += 1
+        # save_tiff = tiff_save / (str(id)+ ".tif")
+        # shutil.copy(file, save_tiff)
+        # convert_tiff_to_3channel(str(file), str(save_name))
+        convert_tiff_to_3channel_convex(str(file), str(save_name))
+        # id += 1
