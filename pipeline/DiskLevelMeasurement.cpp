@@ -116,6 +116,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
 
     // compute the desire data of planar clusters
     *result = DiskLevelMeasurement::calculate_planes_figure(plane_pair);
+    return true;
 }
 
 // need to

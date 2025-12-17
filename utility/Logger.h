@@ -72,11 +72,17 @@ private:
 
         try {
             // logger name with timestamp
-            int date = NowDateToInt();
-            int time = NowTimeToInt();
-            const std::string logger_name = logger_name_prefix +
-                                            std::to_string(date) + "_" +
-                                            std::to_string(time);
+            // int date = NowDateToInt();
+            // int time = NowTimeToInt();
+            // const std::string logger_name = logger_name_prefix +
+            //                                 std::to_string(date) + "_" +
+            //                                 std::to_string(time);
+            //ms level logger name
+            auto now = std::chrono::system_clock::now();
+            auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now.time_since_epoch()).count();
+
+            const std::string logger_name = logger_name_prefix + std::to_string(millis);
  
             auto existing_logger = spdlog::get(logger_name);
             if (existing_logger) {
