@@ -40,7 +40,7 @@ public:
             geometry::KDTreeSearchParamRadius param,
             DiskLevelMeasurementResult* result,
             std::pair<bool, cv::Point2f> disk_centre,
-            float central_plane_size = 200.0,
+            float central_plane_size = 50.0,
             float normal_angle_threshold = 0.0,
             float distance_threshold = 0.0,
             int min_planar_points = 100,

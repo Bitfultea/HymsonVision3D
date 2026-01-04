@@ -100,6 +100,7 @@ std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
     // denoise
     cv::Mat maskClean;
     cv::morphologyEx(mask, maskClean, cv::MORPH_OPEN, kernel);
+    // cv::imwrite("mask.jpg", maskClean);
 
     // find contours
     std::vector<std::vector<cv::Point>> contours;
@@ -108,25 +109,40 @@ std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
                      cv::CHAIN_APPROX_SIMPLE);
 
     if (!contours.empty()) {
-        // find the maximum contour
-        auto largestContourIt = std::max_element(
-                contours.begin(), contours.end(),
-                [](const std::vector<cv::Point>& a,
-                   const std::vector<cv::Point>& b) {
-                    return cv::contourArea(a) < cv::contourArea(b);
-                });
+        std::vector<cv::Point> best_contour;
+        std::sort(contours.begin(), contours.end(),
+                  [](const std::vector<cv::Point>& a,
+                     const std::vector<cv::Point>& b) {
+                      return a.size() > b.size();
+                  });
 
-        cv::RotatedRect ellipse = cv::fitEllipse(*largestContourIt);
-        cv::Point2f center = ellipse.center;
+        cv::RotatedRect best_ellipse;
+        bool found = false;
+        for (const auto& contour : contours) {
+            cv::RotatedRect ellipse = cv::fitEllipse(contour);
+            double ratio = ellipse.size.width / ellipse.size.height;
+            // std::cout << "ratio: " << ratio << std::endl;
+            if (ratio > 0.75 && ratio < 1.3) {
+                best_ellipse = ellipse;
+                found = true;
+                break;
+            }
+        }
+        if (found) best_ellipse = cv::fitEllipse(contours[0]);
+
+        cv::Point2f center = best_ellipse.center;
 
         // draw the ellipse
         if (debug_mode) {
-            cv::ellipse(img, ellipse, cv::Scalar(0, 255, 0), 2);    // ellipse
-            cv::circle(img, center, 5, cv::Scalar(0, 0, 255), -1);  // centre
+            cv::ellipse(img, best_ellipse, cv::Scalar(0, 255, 0),
+                        2);  // ellipse
+            cv::circle(img, center, 5, cv::Scalar(0, 0, 255),
+                       -1);  // centre
             cv::imwrite("circle_location.jpg", img);
         }
-        LOG_INFO("圆环中心坐标: ({},{} )", static_cast<int>(center.x),
+        LOG_INFO("圆环中心坐标: ({},{})", static_cast<int>(center.x),
                  static_cast<int>(center.y));
+        LOG_INFO("圆环半径: {}", best_ellipse.size.width / 2);
 
         return {true, center};
     }

@@ -105,6 +105,7 @@ def convert_tiff_to_3channel_convex(tiff_path, output_path):
     # dx > 0 表示上坡，dx < 0 表示下坡
     # 结果包含正负小数
     sobel_x = cv2.Sobel(raw_clamped, cv2.CV_64F, 1, 0, ksize=3)
+    # cv2.imwrite("sobel_x.png", sobel_x)
     
     # 关键点：如何把正负值映射到 0-255？
     # 直接使用 robust_normalize 会自动把最负的值映射为0，最正的映射为255
@@ -120,8 +121,149 @@ def convert_tiff_to_3channel_convex(tiff_path, output_path):
     merged_img = cv2.merge([norm_height, norm_sobel_x, norm_sobel_y])
     
     cv2.imwrite(output_path, merged_img)
+    
+def convert_tiff_to_3channel_convex_new(tiff_path, output_path):
+    """
+    新版预处理：保留凹凸方向信息
+    Channel 0: 高度图
+    Channel 1: Sobel X (水平梯度)
+    Channel 3: CLAHE (纹理增强)
+    """
+    # 1. 读取原始数据
+    raw_data = tiff.imread(tiff_path)
+    raw_data = np.nan_to_num(raw_data, nan=0.0)
+
+    # 2. 预先截断 (去除飞点对梯度的干扰)
+    # 如果不先截断，一个飞点会导致整张图的梯度极小
+    lower_limit = np.percentile(raw_data, 0.1)
+    upper_limit = np.percentile(raw_data, 99.9)
+    raw_clamped = np.clip(raw_data, lower_limit, upper_limit)
+
+    # --- Channel 1: 基础高度图 ---
+    norm_height = robust_normalize(raw_clamped, 0, 100) # 既然已经clip过了，直接归一化
+
+    # --- Channel 2: Sobel X (水平方向) ---
+    # dx > 0 表示上坡，dx < 0 表示下坡
+    # 结果包含正负小数
+    sobel_x = cv2.Sobel(raw_clamped, cv2.CV_64F, 1, 0, ksize=3)
+    norm_sobel_x = robust_normalize(sobel_x, 0.1, 99.9)
+
+    # --- Channel 3: Sobel Y (垂直方向) ---
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced_texture = clahe.apply(norm_height)
+
+    # --- 合并与保存 ---
+    # 这种组合下，原本"看起来一样"的圆环，现在会变成"一边亮一边暗"的立体球感
+    merged_img = cv2.merge([norm_height, norm_sobel_x, enhanced_texture])
+    
+    cv2.imwrite(output_path, merged_img)
     # print(f"Processed: {output_path}")
 
+def convert_tiff_to_3channel_gradlimit(tiff_path, output_path):
+    # 1. 读取数据
+    raw_data = tiff.imread(tiff_path)
+    raw_data = np.nan_to_num(raw_data, nan=0.0)
+
+    # 2. 预处理：高度图 (Channel 1 - B)
+    # 高度图依然使用之前的百分比截断，因为高度是相对的
+    # lower_h = np.percentile(raw_data, 0.1)
+    # upper_h = np.percentile(raw_data, 99.9)
+    # raw_clamped = np.clip(raw_data, lower_h, upper_h)
+    raw_clamped = raw_data
+    min_pt = np.min(raw_data)
+    max_pt = np.max(raw_data)
+    
+    denom = max_pt - min_pt
+    if denom == 0: denom = 1
+    norm_height = ((raw_clamped - min_pt) / denom * 255).astype(np.uint8)
+
+    # 3. 关键修正：梯度图 (Channel 2 & 3 - G & R)
+    # 我们不再动态统计 min/max，而是设置一个固定的物理阈值
+    # 假设你的传感器数据单位，梯度超过一定数值（比如 5.0 或 10.0）就算陡峭边缘
+    # 【重要】你需要根据实际数据调整这个 GRAD_LIMIT
+    # 如果生成的图片看起来全是灰的，说明 LIMIT 太大了，改小点（如 2.0）
+    # 如果生成的图片全是黑白的（对比度过饱和），说明 LIMIT 太小了，改大点（如 20.0）
+    GRAD_LIMIT = 0.75
+
+    # 计算梯度
+    sobel_x = cv2.Sobel(raw_data, cv2.CV_64F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(raw_data, cv2.CV_64F, 0, 1, ksize=3)
+
+    def fixed_normalize(grad_data, limit):
+        # 强制截断到 [-limit, +limit]
+        # print("grad_data", grad_data)
+        clipped = np.clip(grad_data, -limit, limit)
+        # 线性映射：-limit -> 0, 0 -> 127.5, +limit -> 255
+        norm = ((clipped + limit) / (2 * limit) * 255).astype(np.uint8)
+        return norm
+
+    norm_sobel_x = fixed_normalize(sobel_x, GRAD_LIMIT)
+    norm_sobel_y = fixed_normalize(sobel_y, GRAD_LIMIT)
+
+    # 4. 合并保存
+    merged_img = cv2.merge([norm_height, norm_sobel_x, norm_sobel_y])
+    cv2.imwrite(output_path, merged_img)
+
+
+def normalize_to_rgb(vector_channel):
+    """ 将 [-1, 1] 范围的法线分量映射到 [0, 255] 的 uint8 """
+    # 公式: output = (input + 1) / 2 * 255
+    normalized = ((vector_channel + 1.0) / 2.0 * 255).clip(0, 255).astype(np.uint8)
+    return normalized
+
+def calculate_normal_map(height_data, grad_step=1.0):
+    """ 从高度图计算法线贴图 """
+    
+    # 1. 计算 X 和 Y 方向的梯度 (使用 Sobel 算子也可以，但这里直接用 diff)
+    # np.gradient 比 Sobel 更适合处理连续高度场
+    dz_dx, dz_dy = np.gradient(height_data, grad_step, grad_step)
+    
+    # 2. 构建法线向量 N = (-dz/dx, -dz/dy, 1)
+    N_x = -dz_dx
+    N_y = -dz_dy
+    N_z = 1.0  # Z分量固定为 1
+    
+    # 3. 归一化为单位向量 (计算法线长度，并除以长度)
+    length = np.sqrt(N_x**2 + N_y**2 + N_z**2)
+    
+    unit_N_x = N_x / length
+    unit_N_y = N_y / length
+    unit_N_z = N_z / length
+    
+    # 4. 映射到 RGB 颜色空间 (R, G 通道对应 N_x, N_y)
+    # N_x, N_y 范围都在 [-1, 1]
+    R_channel = normalize_to_rgb(unit_N_x)
+    G_channel = normalize_to_rgb(unit_N_y)
+    B_channel = normalize_to_rgb(unit_N_z) # 理论上 N_z 接近 1，所以 B 通道会很亮
+
+    # 5. 返回 N_x 和 N_y 作为两个特征通道
+    return unit_N_x, unit_N_y
+
+def convert_tiff_to_3channel_normal(tiff_path, output_path):
+   # 1. 读取数据
+    raw_data = tiff.imread(tiff_path)
+    raw_data = np.nan_to_num(raw_data, nan=0.0)
+
+    # 2. 预处理：高度图 (Channel 1 - B)
+    # 高度图依然使用之前的百分比截断，因为高度是相对的
+    lower_h = np.percentile(raw_data, 0.1)
+    upper_h = np.percentile(raw_data, 99.9)
+    raw_clamped = np.clip(raw_data, lower_h, upper_h)
+    
+    denom = upper_h - lower_h
+    if denom == 0: denom = 1
+    norm_height = ((raw_clamped - lower_h) / denom * 255).astype(np.uint8)
+
+    # 计算法线分量
+    unit_N_x, unit_N_y = calculate_normal_map(raw_data)
+    
+    # 将法线分量映射到 [0, 255]
+    norm_Nx = normalize_to_rgb(unit_N_x)
+    norm_Ny = normalize_to_rgb(unit_N_y)
+    
+    # 合并： [高度, Nx, Ny]
+    merged_img = cv2.merge([norm_height, norm_Nx, norm_Ny]) # BGR 顺序
+    cv2.imwrite(output_path, merged_img)
 
 # --- 批量处理示例 ---
 if __name__ == "__main__":
@@ -142,6 +284,9 @@ if __name__ == "__main__":
         #copy the file to destination
         # save_tiff = tiff_save / (str(id)+ ".tif")
         # shutil.copy(file, save_tiff)
+        
         # convert_tiff_to_3channel(str(file), str(save_name))
-        convert_tiff_to_3channel_convex(str(file), str(save_name))
+        # convert_tiff_to_3channel_convex(str(file), str(save_name))
+        convert_tiff_to_3channel_convex_new(str(file), str(save_name))
+        # convert_tiff_to_3channel_normal(str(file), str(save_name))
         # id += 1

@@ -77,32 +77,37 @@ private:
             // const std::string logger_name = logger_name_prefix +
             //                                 std::to_string(date) + "_" +
             //                                 std::to_string(time);
-            //ms level logger name
+            // ms level logger name
             auto now = std::chrono::system_clock::now();
             auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now.time_since_epoch()).count();
+                                  now.time_since_epoch())
+                                  .count();
 
-            const std::string logger_name = logger_name_prefix + std::to_string(millis);
- 
+            const std::string logger_name =
+                    logger_name_prefix + std::to_string(millis);
+
             auto existing_logger = spdlog::get(logger_name);
             if (existing_logger) {
                 m_logger = existing_logger;
                 return;
             }
 
+            // spdlog::set_color_mode(spdlog::color_mode::always);
             if (console)
                 m_logger = spdlog::stdout_color_st(
                         logger_name);  // single thread console output faster
+
             else
                 // m_logger =
                 // spdlog::create_async<spdlog::sinks::basic_file_sink_mt>(logger_name,
-                // log_dir + "/" + logger_name + ".log"); // only one log file
+                // log_dir + "/" + logger_name + ".log"); // only one log
+                // file
                 m_logger = spdlog::create_async<
                         spdlog::sinks::rotating_file_sink_mt>(
                         logger_name, log_dir + "/" + logger_name + ".log",
                         500 * 1024 * 1024,
-                        1000);  // multi part log files, with every part 500M,
-                                // max 1000 files
+                        1000);  // multi part log files, with every part
+                                // 500M, max 1000 files
 
             // custom format
             m_logger->set_pattern(
