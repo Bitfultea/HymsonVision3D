@@ -25,8 +25,9 @@ int main(int argc, char** argv) {
 
     cv::Mat tiff_image;
     utility::read_tiff(argv[1], tiff_image);
-
+    auto start1 = std::chrono::high_resolution_clock::now();
     core::PointCloudRaster raster;
+    std::cout << "type of tiff_image:" << tiff_image.type() << std::endl;
     cv::Mat pre_processed = raster.project_to_feature_frame(tiff_image);
     std::pair<bool, cv::Point2f> disk_centre =
             core::feature::detect_green_ring(pre_processed, debug_mode);

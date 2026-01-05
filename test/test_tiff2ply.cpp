@@ -32,8 +32,8 @@ int main(int argc, char **argv) {
                 geometry::PointCloud::Ptr pointcloud =
                         std::make_shared<geometry::PointCloud>();
                 core::converter::tiff_to_pointcloud(
-                        file_path, pointcloud, Eigen::Vector3d(0.01, 0.03, 1),
-                        true);
+                        file_path, pointcloud, Eigen::Vector3d(1, 1, 200),
+                        false);
                 // 构造ply输出文件名
                 auto path = entry.path();
                 path.replace_extension(".ply");
