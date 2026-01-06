@@ -269,6 +269,7 @@ int Cluster::PlanarCluster(geometry::PointCloud& cloud,
 
     geometry::KDTree kdtree;
     kdtree.SetData(cloud);
+
     // compute normals
     if (!cloud.HasNormals()) {
         geometry::KDTreeSearchParamRadius param(radius);
@@ -276,89 +277,170 @@ int Cluster::PlanarCluster(geometry::PointCloud& cloud,
         feature::orient_normals_towards_positive_z(cloud);
     }
 
+    // acos(dot) < theta ---> dot > cos(theta)
+    float cos_normal_threshold = std::cos(normal_degree * M_PI / 180.0f);
+
     // compute curvature alternatively
+    std::vector<float> total_curvatures(cloud.points_.size(), 0.0f);
     if (!cloud.HasCurvatures() && use_curvature) {
         double sum_angle = 0.0;
         int neighbor_count = 0;
-        cloud.curvatures_.resize(cloud.points_.size());
+        // cloud.curvatures_.resize(cloud.points_.size());
+        std::vector<float> total_curvatures(cloud.points_.size(), 0.0f);
+
 #pragma omp parallel for
         for (int i = 0; i < cloud.normals_.size(); i++) {
             std::vector<int> neighbors;
             std::vector<double> dists2;
             kdtree.SearchRadius(cloud.points_[i], radius, neighbors, dists2);
+
+            double local_sum_angle = 0.0;
+            int count = 0;
+
             for (size_t j = 0; j < neighbors.size(); j++) {
                 if (i != j) {
-                    double product = cloud.normals_[i].dot(cloud.normals_[j]);
-                    double angle = acos(product);
-                    sum_angle += angle;
-                    neighbor_count++;
+                    // double product =
+                    // cloud.normals_[i].dot(cloud.normals_[j]); double angle =
+                    // acos(product); sum_angle += angle; neighbor_count++;
+
+                    double dot = std::max(
+                            -1.0, std::min(1.0, cloud.normals_[i].dot(
+                                                        cloud.normals_[j])));
+                    local_sum_angle += std::acos(dot);
+                    count++;
                 }
             }
-            geometry::curvature* curvature = new geometry::curvature;
-            if (neighbor_count > 0) {
-                curvature->total_curvature = sum_angle / neighbor_count;
-            } else {
-                curvature->total_curvature = 0.0;
-            }
-            cloud.curvatures_[i] = curvature;
+            total_curvatures[i] =
+                    (count > 0) ? (float)(local_sum_angle / count) : 0.0f;
         }
+
+        // geometry::curvature* curvature = new geometry::curvature;
+        // if (neighbor_count > 0) {
+        //     curvature->total_curvature = sum_angle / neighbor_count;
+        // } else {
+        //     curvature->total_curvature = 0.0;
+        // }
+        // cloud.curvatures_[i] = curvature;
     }
 
     // Perform actual planar region growing
-    std::vector<int> labels(cloud.points_.size(), -1);
+    int n_points = static_cast<int>(cloud.points_.size());
+    std::vector<int> labels(n_points, -1);
     int cluster_label = 0;
-    for (size_t i = 0; i < cloud.points_.size(); i++) {
+
+    std::vector<int> seed_queue;
+    seed_queue.reserve(n_points);
+
+    // for (size_t i = 0; i < n_points; i++) {
+    //     if (labels[i] != -1) continue;
+
+    //     std::vector<int> cluster;
+    //     std::unordered_set<int> visited;
+    //     cluster.push_back(i);
+    //     visited.insert(i);
+
+    //     while (!cluster.empty()) {
+    //         int current = cluster.back();
+    //         cluster.pop_back();
+
+    //         std::vector<int> neighbors;
+    //         std::vector<double> dists2;
+    //         kdtree.SearchRadius(cloud.points_[current], radius, neighbors,
+    //                             dists2);
+    //         for (int neighbor : neighbors) {
+    //             if (visited.find(neighbor) != visited.end()) continue;
+
+    //             // check the normal degree
+    //             double angle = acos(cloud.normals_[current].x() *
+    //                                         cloud.normals_[neighbor].x() +
+    //                                 cloud.normals_[current].y() *
+    //                                         cloud.normals_[neighbor].y() +
+    //                                 cloud.normals_[current].z() *
+    //                                         cloud.normals_[neighbor].z());
+
+    //             if (angle > normal_degree / 180.0 * M_PI) continue;
+
+    //             // check the curvature
+    //             if (use_curvature) {
+    //                 if (std::abs(cloud.curvatures_[neighbor]->total_curvature
+    //                 -
+    //                              cloud.curvatures_[current]->total_curvature)
+    //                              >
+    //                             curvature_threshold ||
+    //                     std::abs(cloud.intensities_[neighbor] -
+    //                              cloud.intensities_[current]) > 100)
+    //                     continue;
+    //             }
+    //             cluster.push_back(neighbor);
+    //             visited.insert(neighbor);
+    //             labels[neighbor] = cluster_label;
+    //         }
+    //     }
+
+    //     if (visited.size() >= min_cluster_size) {
+    //         cluster_label++;
+    //     } else {
+    //         for (int idx : visited) {
+    //             labels[idx] = -1;
+    //         }
+    //     }
+
+    for (int i = 0; i < n_points; i++) {
         if (labels[i] != -1) continue;
 
-        std::vector<int> cluster;
-        std::unordered_set<int> visited;
-        cluster.push_back(i);
-        visited.insert(i);
+        // start new Cluster
+        int current_cluster_start_idx = seed_queue.size();
+        seed_queue.push_back(i);
+        labels[i] = cluster_label;
 
-        while (!cluster.empty()) {
-            int current = cluster.back();
-            cluster.pop_back();
+        int head = current_cluster_start_idx;
+        while (head < (int)seed_queue.size()) {
+            int curr_idx = seed_queue[head++];
 
             std::vector<int> neighbors;
             std::vector<double> dists2;
-            kdtree.SearchRadius(cloud.points_[current], radius, neighbors,
+            kdtree.SearchRadius(cloud.points_[curr_idx], radius, neighbors,
                                 dists2);
-            for (int neighbor : neighbors) {
-                if (visited.find(neighbor) != visited.end()) continue;
 
-                // check the normal degree
-                double angle = acos(cloud.normals_[current].x() *
-                                            cloud.normals_[neighbor].x() +
-                                    cloud.normals_[current].y() *
-                                            cloud.normals_[neighbor].y() +
-                                    cloud.normals_[current].z() *
-                                            cloud.normals_[neighbor].z());
+            for (int neighbor_idx : neighbors) {
+                if (labels[neighbor_idx] != -1) continue;
 
-                if (angle > normal_degree / 180.0 * M_PI) continue;
+                // replace acos
+                double dot = cloud.normals_[curr_idx].dot(
+                        cloud.normals_[neighbor_idx]);
+                if (dot < cos_normal_threshold) continue;
 
-                // check the curvature
                 if (use_curvature) {
-                    if (std::abs(cloud.curvatures_[neighbor]->total_curvature -
-                                 cloud.curvatures_[current]->total_curvature) >
-                                curvature_threshold ||
-                        std::abs(cloud.intensities_[neighbor] -
-                                 cloud.intensities_[current]) > 100)
+                    if (std::abs(total_curvatures[neighbor_idx] -
+                                 total_curvatures[curr_idx]) >
+                        curvature_threshold)
+                        continue;
+                    // Intensity check
+                    if (!cloud.intensities_.empty() &&
+                        std::abs(cloud.intensities_[neighbor_idx] -
+                                 cloud.intensities_[curr_idx]) > 100)
                         continue;
                 }
-                cluster.push_back(neighbor);
-                visited.insert(neighbor);
-                labels[neighbor] = cluster_label;
+
+                labels[neighbor_idx] = cluster_label;
+                seed_queue.push_back(neighbor_idx);
             }
         }
 
-        if (visited.size() >= min_cluster_size) {
+        // check size of cluster
+        int cluster_size = (int)seed_queue.size() - current_cluster_start_idx;
+        if (cluster_size >= min_cluster_size) {
             cluster_label++;
         } else {
-            for (int idx : visited) {
-                labels[idx] = -1;
+            // set to -1
+            for (int j = current_cluster_start_idx; j < (int)seed_queue.size();
+                 j++) {
+                labels[seed_queue[j]] = -1;
             }
+            seed_queue.resize(current_cluster_start_idx);
         }
     }
+
     cloud.labels_ = labels;
 
     // colorise the different clusters

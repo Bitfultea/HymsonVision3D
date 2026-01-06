@@ -128,7 +128,7 @@ std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
                 break;
             }
         }
-        if (found) best_ellipse = cv::fitEllipse(contours[0]);
+        if (!found) best_ellipse = cv::fitEllipse(contours[0]);
 
         cv::Point2f center = best_ellipse.center;
 

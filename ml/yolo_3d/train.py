@@ -62,7 +62,7 @@ def train_model():
         cache=True,            # 开启复制粘贴增强
         # mixup=0.00,            # 开启混合增强
         mixup=0.0,          # 开启混合增强
-        cutmix=0.40,
+        cutmix=0.50,
         
         # cls=2.0
         # dfl=2.0
