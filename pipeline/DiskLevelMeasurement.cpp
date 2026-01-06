@@ -15,6 +15,128 @@
 
 namespace hymson3d {
 namespace pipeline {
+std::vector<float> statistical_filter(const std::vector<float>& data,
+                                      const float& n) {
+    if (data.empty()) return {};
+    int size = data.size();
+    // 1. 计算均值
+    float mean = std::accumulate(data.begin(), data.end(), 0.0) / size;
+
+    // 2. 计算标准差
+    float sum_squared_diff = 0.0;
+    for (const auto& val : data) {
+        sum_squared_diff += (val - mean) * (val - mean);
+    }
+    float std_dev = std::sqrt(sum_squared_diff / data.size());
+
+    // 3. 过滤超出 mean ± n*σ 的值
+    std::vector<float> filtered;
+
+    for (int i = 0; i < size; ++i) {
+        if (std::abs(data[i] - mean) <= n * std_dev) {
+            filtered.push_back(data[i]);
+        }
+    }
+
+    return filtered;
+}
+void fixCorner(cv::Mat& img,
+               const cv::Mat& abnormalMask,
+               int y,
+               int x,
+               int ks,
+               float delta) {
+    // 如果角点不是异常，直接返回
+    if (abnormalMask.at<uchar>(y, x) == 0) return;
+    // float sum = 0.f;
+    // int cnt = 0;
+    int step = 0;
+    if ((ks - 1) % 2 != 0 || (ks <= 1)) {
+        LOG_ERROR("Illegal input ks parameters.");
+        return;
+    } else {
+        step = (ks - 1) / 2;
+    }
+    const int rows = img.rows;
+    const int cols = img.cols;
+
+    // ===== 根据角点位置裁剪邻域范围 =====
+    const int y0 = std::max(0, y - step);
+    const int y1 = std::min(rows - 1, y + step);
+    const int x0 = std::max(0, x - step);
+    const int x1 = std::min(cols - 1, x + step);
+    // ===== 指针访问 + 无边界判断内层循环 =====
+    //增加均值和标准差滤波
+    std::vector<float> temp;
+    for (int yy = y0; yy <= y1; ++yy) {
+        const float* imgPtr = img.ptr<float>(yy);
+        const uchar* maskPtr = abnormalMask.ptr<uchar>(yy);
+
+        for (int xx = x0; xx <= x1; ++xx) {
+            if (maskPtr[xx] == 0) {
+                temp.emplace_back(imgPtr[xx]);
+                // sum += imgPtr[xx];
+                //++cnt;
+            }
+        }
+    }
+    // float delta = 1.5;
+    std::vector<float> filtered = statistical_filter(temp, delta);
+    if (filtered.size() > 0) {
+        float filtered_mean =
+                std::accumulate(filtered.begin(), filtered.end(), 0.0) /
+                filtered.size();
+        img.at<float>(y, x) = filtered_mean;
+    } else {
+        LOG_ERROR("No available data for use.");
+    }
+}
+
+    bool DiskLevelMeasurement::preprocess_img(cv::Mat& tiff_image,
+    int ks, float delta) {
+        try {
+            //异常角点检测
+            double minVal, maxVal;
+            cv::minMaxLoc(tiff_image, &minVal, &maxVal);
+            if ((maxVal - minVal) > 500) {
+                // std::cout << "minVal:" << minVal << "maxVal:" << maxVal <<
+                // std::endl;
+                cv::Mat mask1 =
+                        ((tiff_image - minVal) >=
+                         0.5 * (maxVal - minVal));  //异常值在大部分数值下方
+                cv::Mat mask2 =
+                        ((tiff_image - minVal) < 0.5 * (maxVal - minVal));
+                int count1 = cv::countNonZero(mask1);
+                int count2 = cv::countNonZero(mask2);
+                //int ks = 101;
+                //float delta = 1.5;
+                if (count1 >= count2) {
+                    //判断角点是否是异常值
+                    fixCorner(tiff_image, mask2, 0, 0, ks, delta);
+                    fixCorner(tiff_image, mask2, 0, tiff_image.cols - 1, ks,
+                              delta);
+                    fixCorner(tiff_image, mask2, tiff_image.rows - 1, 0, ks,
+                              delta);
+                    fixCorner(tiff_image, mask2, tiff_image.rows - 1,
+                              tiff_image.cols - 1, ks, delta);
+                } else {
+                    fixCorner(tiff_image, mask1, 0, 0, ks, delta);
+                    fixCorner(tiff_image, mask1, 0, tiff_image.cols - 1, ks,
+                              delta);
+                    fixCorner(tiff_image, mask1, tiff_image.rows - 1, 0, ks,
+                              delta);
+                    fixCorner(tiff_image, mask1, tiff_image.rows - 1,
+                              tiff_image.cols - 1, ks, delta);
+                }
+            }
+            return true;
+        } catch (...) {
+            LOG_ERROR("Failed to perform preprocess_img.");
+            return false;
+        }
+
+
+    }
 
 bool DiskLevelMeasurement::perform_measurement(
         std::shared_ptr<geometry::PointCloud> cloud,

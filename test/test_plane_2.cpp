@@ -20,12 +20,16 @@ int main(int argc, char** argv) {
 
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
-    core::converter::tiff_to_pointcloud(argv[1], pointcloud,
-                                        Eigen::Vector3d(1, 1, 200), false);
+    //core::converter::tiff_to_pointcloud(argv[1], pointcloud,
+    //                                    Eigen::Vector3d(1, 1, 200), false);
 
     cv::Mat tiff_image;
     utility::read_tiff(argv[1], tiff_image);
-    auto start1 = std::chrono::high_resolution_clock::now();
+    int kernal_size = 101;
+    float delta = 1.5;
+    pipeline::DiskLevelMeasurement::preprocess_img(tiff_image, kernal_size, delta);
+    core::converter::mat_to_pointcloud(tiff_image, pointcloud,
+                                       Eigen::Vector3d(1, 1, 200), false);
     core::PointCloudRaster raster;
     std::cout << "type of tiff_image:" << tiff_image.type() << std::endl;
     cv::Mat pre_processed = raster.project_to_feature_frame(tiff_image);

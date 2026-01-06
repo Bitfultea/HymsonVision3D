@@ -119,16 +119,24 @@ std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
         cv::RotatedRect best_ellipse;
         bool found = false;
         for (const auto& contour : contours) {
+            if (contour.size() < 5) {
+                continue;
+            }
             cv::RotatedRect ellipse = cv::fitEllipse(contour);
             double ratio = ellipse.size.width / ellipse.size.height;
             // std::cout << "ratio: " << ratio << std::endl;
-            if (ratio > 0.75 && ratio < 1.3) {
+            if (ratio > 0.65 && ratio < 1.3) {
                 best_ellipse = ellipse;
                 found = true;
                 break;
             }
         }
-        if (!found) best_ellipse = cv::fitEllipse(contours[0]);
+        if (!found) {
+            if (contours[0].size() > 5)
+                best_ellipse = cv::fitEllipse(contours[0]);
+            else
+                return {false, cv::Point2f(0, 0)};
+        }
 
         cv::Point2f center = best_ellipse.center;
 

@@ -231,15 +231,19 @@ void mat_to_pointcloud(const cv::Mat& mat,
     pcd.resize(mat.rows * mat.cols);
     for (int i = 0; i < mat.rows; ++i) {
         const float* row_ptr = mat.ptr<float>(i);
-        float y = i * ratio.y();
+        double y = i * ratio.y();
 #pragma omp parallel for
         for (int j = 0; j < mat.cols; ++j) {
-            float x = j * ratio.x();
-            float z = row_ptr[j] * ratio.z();
+            double x = j * ratio.x();
+            double z = row_ptr[j] * ratio.z();
             pcd[i * mat.cols + j] = Eigen::Vector3d(x, y, z);
         }
     }
     pointcloud->points_ = pcd;
+    pointcloud->width_ = mat.cols;
+    pointcloud->height_ = mat.rows;
+    LOG_DEBUG("Read from tiff file with pointcloud size: {}",
+              pointcloud->points_.size());
 }
 
 void to_pcl_pointcloud(geometry::PointCloud& src,

@@ -13,6 +13,8 @@ struct DiskLevelMeasurementResult {
 
 class DiskLevelMeasurement {
 public:
+    static bool preprocess_img(cv::Mat& tiff_image,
+        int ks, float delta);
     static bool perform_measurement(std::shared_ptr<geometry::PointCloud> cloud,
                                     geometry::KDTreeSearchParamRadius param,
                                     DiskLevelMeasurementResult* result,
