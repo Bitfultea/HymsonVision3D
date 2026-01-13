@@ -3,6 +3,8 @@
 namespace hymson3d {
 namespace pipeline {
 
+SegmentationMFD::SegmentationMFD() { model_ = nullptr; }
+
 SegmentationMFD::SegmentationMFD(const std::string& model_path,
                                  cv::Size size,
                                  int topk,
@@ -11,6 +13,33 @@ SegmentationMFD::SegmentationMFD(const std::string& model_path,
                                  int seg_channelss) {
     model_ = std::make_unique<ml::Segmentation_ML_3d>(
             model_path, size, topk, seg_h, seg_w, seg_channelss);
+}
+bool SegmentationMFD::enableModel(bool enable,
+                                  const std::string& model_path,
+                                  cv::Size size,
+                                  int topk,
+                                  int seg_h,
+                                  int seg_w,
+                                  int seg_channelss) { 
+    if (enable) {
+        // 已经初始化，直接返回
+        if (model_) {
+            return true;
+        }
+        try {
+            model_ = std::make_unique<ml::Segmentation_ML_3d>(
+                    model_path, size, topk, seg_h, seg_w, seg_channelss);
+        } catch (...) {
+            model_.reset();
+            return false;
+        }
+        return true;
+    } else {
+        if (model_) {
+            model_.reset();
+        }
+        return true;
+    }
 }
 
 void SegmentationMFD::run_segmentation(const std::string& tiff_file_path,
@@ -26,12 +55,16 @@ void SegmentationMFD::run_segmentation(const std::string& tiff_file_path,
     model_->infer(tiff_image, score_thres, iou_thres, debug_mode);
 }
 
-void SegmentationMFD::run_segmentation_dll(cv::Mat& tiff_image,
+bool SegmentationMFD::run_segmentation_dll(cv::Mat& tiff_image,
                                        float score_thres,
                                        float iou_thres,
                                        bool debug_mode) {
     m_raw_tiff = tiff_image;
+    if (model_ == nullptr) {
+        return false;
+    }
     model_->infer(tiff_image, score_thres, iou_thres, debug_mode);
+    return true;
 }
 
 void SegmentationMFD::analysis_defetcts(std::vector<Defect>& defects) {
@@ -54,6 +87,8 @@ void SegmentationMFD::analysis_defetcts(std::vector<Defect>& defects) {
         defect.label = label;
         // masked points
         defect.height = get_masked_defect_height(obj.rect);
+        //score
+        defect.score = obj.prob;
         defects.emplace_back(defect);
     }
 }

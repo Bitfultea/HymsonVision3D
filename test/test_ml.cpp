@@ -20,7 +20,8 @@ int main(int argc, char** argv) {
 
     LOG_INFO("Starting segmentation...");
 
-    std::string engine_file = "../ml/yolo_3d/tools/hymson3d-seg.engine";
+    //std::string engine_file = "../ml/yolo_3d/tools/hymson3d-seg.engine";
+    std::string engine_file = argv[2];
 
     // Model parameters
     cv::Size image_size = cv::Size(960, 960);
@@ -28,9 +29,17 @@ int main(int argc, char** argv) {
     int seg_h = 160;
     int seg_w = 160;
     int seg_channels = 32;
+    auto start = std::chrono::high_resolution_clock::now();
+    //pipeline::SegmentationMFD segmentation_mfd(engine_file, image_size, topk,
+    //                                           seg_h, seg_w, seg_channels);
+    pipeline::SegmentationMFD segmentation_mfd;
+    bool enable = true;//´ò¿ªAI
+    segmentation_mfd.enableModel(enable, engine_file, image_size, topk, seg_h, seg_w, seg_channels);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+    std::cout << "AiInit times:" << elapsed.count() << "ms"
+              << std::endl;
 
-    pipeline::SegmentationMFD segmentation_mfd(engine_file, image_size, topk,
-                                               seg_h, seg_w, seg_channels);
 
     // infer params
     float score_thres = 0.4f;
@@ -44,9 +53,9 @@ int main(int argc, char** argv) {
     segmentation_mfd.analysis_defetcts(defects);
 
     for (auto& defect : defects) {
-        LOG_INFO("Defect: {};  area:{}; height:{}; centre:[{},{}]",
+        LOG_INFO("Defect: {};  area:{}; height:{}; centre:[{},{}]; score:{}",
                  defect.label, defect.area_bbox, defect.height, defect.center.x,
-                 defect.center.y);
+                 defect.center.y, defect.score);
     }
 
     LOG_INFO("Segmentation done.");

@@ -14,10 +14,12 @@ struct Defect {
     float half_h;
     std::string label;
     int label_id;
+    float score;
 };
 
 class SegmentationMFD {
 public:
+    SegmentationMFD();  // 无参构造
     SegmentationMFD(const std::string& model_path,
                     cv::Size size = cv::Size{960, 960},
                     int topk = 100,
@@ -31,13 +33,20 @@ public:
                           float score_thres = 0.25f,
                           float iou_thres = 0.65f,
                           bool debug_mode = false);
-    void run_segmentation_dll(cv::Mat& tiff_file_path,
+    bool run_segmentation_dll(cv::Mat& tiff_file_path,
                           float score_thres = 0.25f,
                           float iou_thres = 0.65f,
                           bool debug_mode = false);
 
     void analysis_defetcts(std::vector<Defect>& defects);
     float get_masked_defect_height(cv::Rect mask);
+    bool enableModel(bool enable,
+                    const std::string& model_path,
+                    cv::Size size,
+                    int topk,
+                    int seg_h,
+                    int seg_w,
+                    int seg_channelss);
 
 private:
     std::unique_ptr<ml::Segmentation_ML_3d> model_ = nullptr;

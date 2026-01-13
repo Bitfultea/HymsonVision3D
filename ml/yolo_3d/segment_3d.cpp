@@ -19,6 +19,7 @@ Segmentation_ML_3d::Segmentation_ML_3d(const std::string& engine_file_path,
     m_seg_h = seg_h;
     m_seg_w = seg_w;
     m_seg_channels = seg_channels;
+    yolo_3d_seg_->make_pipe(true);
 }
 
 void Segmentation_ML_3d::infer(const cv::Mat tiff_image,
@@ -28,7 +29,7 @@ void Segmentation_ML_3d::infer(const cv::Mat tiff_image,
     raw_2d_grid_image_ = tiff_image;
     cv::Mat pre_processed_image = preprocess(tiff_image);
 
-    yolo_3d_seg_->make_pipe(true);
+    //yolo_3d_seg_->make_pipe(true);
 
     cv::Mat res;
     // cv::Size size = cv::Size{960, 960};
@@ -42,14 +43,14 @@ void Segmentation_ML_3d::infer(const cv::Mat tiff_image,
     yolo_3d_seg_->infer();
     yolo_3d_seg_->postprocess(m_objs, score_thres, iou_thres, m_topk,
                               m_seg_channels, m_seg_h, m_seg_w);
-    yolo_3d_seg_->draw_objects(pre_processed_image, res, m_objs, CLASS_NAMES,
-                               COLORS, MASK_COLORS);
     auto end = std::chrono::system_clock::now();
     auto tc = (double)std::chrono::duration_cast<std::chrono::microseconds>(
                       end - start)
                       .count() /
               1000.;
     if (debug_mode) {
+        yolo_3d_seg_->draw_objects(pre_processed_image, res, m_objs,
+                                   CLASS_NAMES, COLORS, MASK_COLORS);
         cv::imwrite("res.png", res);
     }
 }

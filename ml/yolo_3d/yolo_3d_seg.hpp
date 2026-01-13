@@ -128,22 +128,69 @@ YOLO_3D_seg::YOLO_3D_seg(const std::string& engine_file_path) {
     }
 }
 
+//YOLO_3D_seg::~YOLO_3D_seg() {
+//    // this->context->destroy();
+//    // this->engine->destroy();
+//    // this->runtime->destroy();
+//    delete this->context;
+//    delete this->engine;
+//    delete this->runtime;
+//    cudaStreamDestroy(this->stream);
+//    for (auto& ptr : this->device_ptrs) {
+//        CHECK(cudaFree(ptr));
+//    }
+//
+//    for (auto& ptr : this->host_ptrs) {
+//        CHECK(cudaFreeHost(ptr));
+//    }
+//}
+
 YOLO_3D_seg::~YOLO_3D_seg() {
-    // this->context->destroy();
-    // this->engine->destroy();
-    // this->runtime->destroy();
-    delete this->context;
-    delete this->engine;
-    delete this->runtime;
-    cudaStreamDestroy(this->stream);
-    for (auto& ptr : this->device_ptrs) {
-        CHECK(cudaFree(ptr));
+    std::cout << "关闭AI模型执行析构函数中...." << std::endl;
+    // 1. 确保所有 CUDA 操作完成
+    if (this->stream) {
+        cudaStreamSynchronize(this->stream);
     }
 
+    // 2. 释放 device memory（cudaMallocAsync → cudaFreeAsync）
+    for (auto& ptr : this->device_ptrs) {
+        if (ptr) {
+            CHECK(cudaFreeAsync(ptr, this->stream));
+        }
+    }
+    this->device_ptrs.clear();
+
+    // 3. 释放 pinned host memory
     for (auto& ptr : this->host_ptrs) {
-        CHECK(cudaFreeHost(ptr));
+        if (ptr) {
+            CHECK(cudaFreeHost(ptr));
+        }
+    }
+    this->host_ptrs.clear();
+
+    // 4. 销毁 TensorRT 对象（正确方式）
+    if (this->context) {
+        delete this->context;
+        this->context = nullptr;
+    }
+
+    if (this->engine) {
+        delete this->engine;
+        this->engine = nullptr;
+    }
+
+    if (this->runtime) {
+        delete this->runtime;
+        this->runtime = nullptr;
+    }
+
+    // 5. 销毁 CUDA stream（最后）
+    if (this->stream) {
+        cudaStreamDestroy(this->stream);
+        this->stream = nullptr;
     }
 }
+
 
 void YOLO_3D_seg::make_pipe(bool warmup) {
     for (auto& bindings : this->input_bindings) {
