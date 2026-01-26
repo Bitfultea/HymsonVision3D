@@ -23,12 +23,12 @@ public:
     /// \brief Parameterized Constructor.
     ///
     /// \param points Points coordinates.
-    PointCloud(const std::vector<Eigen::Vector3d> &points)
+    PointCloud(const std::vector<Eigen::Vector3d>& points)
         : Geometry3D(Geometry::GeometryType::PointCloud), points_(points) {}
     ~PointCloud() override {}
 
 public:
-    PointCloud &Clear() override;
+    PointCloud& Clear() override;
     bool IsEmpty() const override;
     Eigen::Vector3d GetMinBound() const override;
     Eigen::Vector3d GetExtend() const;
@@ -39,16 +39,16 @@ public:
     OBB GetOrientedBoundingBox(bool robust = false) const;
     OBB GetMinimalOrientedBoundingBox(bool robust = false) const;
 
-    PointCloud &Transform(const Eigen::Matrix4d &transformation) override;
-    PointCloud &Translate(const Eigen::Vector3d &translation,
+    PointCloud& Transform(const Eigen::Matrix4d& transformation) override;
+    PointCloud& Translate(const Eigen::Vector3d& translation,
                           bool relative = true) override;
-    PointCloud &Scale(const double scale,
-                      const Eigen::Vector3d &center) override;
-    PointCloud &Rotate(const Eigen::Matrix3d &R,
-                       const Eigen::Vector3d &center) override;
+    PointCloud& Scale(const double scale,
+                      const Eigen::Vector3d& center) override;
+    PointCloud& Rotate(const Eigen::Matrix3d& R,
+                       const Eigen::Vector3d& center) override;
 
-    PointCloud &operator+=(const PointCloud &cloud);
-    PointCloud operator+(const PointCloud &cloud) const;
+    PointCloud& operator+=(const PointCloud& cloud);
+    PointCloud operator+(const PointCloud& cloud) const;
 
     /// Returns 'true' if the point cloud contains points.
     bool HasPoints() const { return points_.size() > 0; }
@@ -76,7 +76,7 @@ public:
     bool HasCurvatures() const { return curvatures_.size() == points_.size(); }
 
     /// Normalize point normals to length 1.
-    PointCloud &NormalizeNormals() {
+    PointCloud& NormalizeNormals() {
         for (size_t i = 0; i < normals_.size(); i++) {
             normals_[i].normalize();
         }
@@ -84,15 +84,15 @@ public:
     }
 
     /// Assigns each point in the PointCloud the same color.
-    PointCloud &PaintUniformColor(const Eigen::Vector3d &color) {
+    PointCloud& PaintUniformColor(const Eigen::Vector3d& color) {
         ResizeAndPaintUniformColor(colors_, points_.size(), color);
         return *this;
     }
 
-    std::shared_ptr<PointCloud> Crop(const AxisAlignedBoundingBox &bbox,
+    std::shared_ptr<PointCloud> Crop(const AxisAlignedBoundingBox& bbox,
                                      bool invert = false) const;
 
-    std::shared_ptr<PointCloud> Crop(const OrientedBoundingBox &bbox,
+    std::shared_ptr<PointCloud> Crop(const OrientedBoundingBox& bbox,
                                      bool invert = false) const;
     // Eigen::Vector3d GenerateRandomColor() const;
 
@@ -110,7 +110,7 @@ public:
     /// Labels for each point
     std::vector<int> labels_;
     /// Curvature of each point
-    std::vector<curvature *> curvatures_;
+    std::vector<curvature> curvatures_;
     // y_slices
     std::vector<std::vector<Eigen::Vector2d>> y_slices_;
     std::vector<double> y_slice_peaks;

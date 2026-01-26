@@ -2,9 +2,10 @@
 
 #include <memory>
 #include <vector>
-#include "fmtfallback.h"
+
 #include "3D/PointCloud.h"
 #include "Hash.h"
+#include "fmtfallback.h"
 
 using namespace hymson3d::geometry;
 namespace hymson3d {
@@ -12,7 +13,7 @@ namespace core {
 
 class AccumulatedPoint {
 public:
-    void AddPoint(const PointCloud &cloud, int index) {
+    void AddPoint(const PointCloud& cloud, int index) {
         point_ += cloud.points_[index];
         if (cloud.HasNormals()) {
             if (!std::isnan(cloud.normals_[index](0)) &&
@@ -35,12 +36,12 @@ public:
             intensity_ += cloud.intensities_[index];
         }
         if (cloud.HasCurvatures()) {
-            curvature_->mean_curvature +=
-                    cloud.curvatures_[index]->mean_curvature;
-            curvature_->gaussian_curvature +=
-                    cloud.curvatures_[index]->gaussian_curvature;
-            curvature_->total_curvature +=
-                    cloud.curvatures_[index]->total_curvature;
+            curvature_.mean_curvature +=
+                    cloud.curvatures_[index].mean_curvature;
+            curvature_.gaussian_curvature +=
+                    cloud.curvatures_[index].gaussian_curvature;
+            curvature_.total_curvature +=
+                    cloud.curvatures_[index].total_curvature;
         }
         num_of_points_++;
     }
@@ -64,14 +65,14 @@ public:
 
     int GetAverageIntensity() const { return intensity_ / num_of_points_; }
 
-    curvature *GetAverageCurvature() const {
-        curvature *voxel_curvature = new curvature();
-        voxel_curvature->mean_curvature =
-                curvature_->mean_curvature / num_of_points_;
-        voxel_curvature->gaussian_curvature =
-                curvature_->gaussian_curvature / num_of_points_;
-        voxel_curvature->total_curvature =
-                curvature_->total_curvature / num_of_points_;
+    curvature GetAverageCurvature() const {
+        curvature voxel_curvature;
+        voxel_curvature.mean_curvature =
+                curvature_.mean_curvature / num_of_points_;
+        voxel_curvature.gaussian_curvature =
+                curvature_.gaussian_curvature / num_of_points_;
+        voxel_curvature.total_curvature =
+                curvature_.total_curvature / num_of_points_;
         return voxel_curvature;
     }
 
@@ -83,7 +84,7 @@ public:
     Eigen::Matrix3d covariance_ = Eigen::Matrix3d::Zero();
     int label_ = 0;
     float intensity_ = 0;
-    curvature *curvature_ = new curvature{0, 0, 0};
+    curvature curvature_ = {0, 0, 0};
 };
 
 class point_cubic_id {
@@ -94,7 +95,7 @@ public:
 
 class AccumulatedPointForTrace : public AccumulatedPoint {
 public:
-    void AddPoint(const PointCloud &cloud,
+    void AddPoint(const PointCloud& cloud,
                   size_t index,
                   int cubic_index,
                   bool approximate_class) {
@@ -165,7 +166,7 @@ public:
                                      double sampling_ratio);
 
     PointCloud::Ptr IndexDownSample(PointCloud::Ptr point_cloud,
-                                    const std::vector<size_t> &indices,
+                                    const std::vector<size_t>& indices,
                                     bool invert = false);
 
     PointCloud::Ptr AxiFilter(PointCloud::Ptr point_cloud,

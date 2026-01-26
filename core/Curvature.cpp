@@ -110,18 +110,18 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
     double max_val = std::numeric_limits<double>::min();
 
     for (int i = 0; i < cloud_curvatures->size(); i++) {
-        geometry::curvature* curvature = new geometry::curvature();
-        curvature->mean_curvature =
+        geometry::curvature curvature;
+        curvature.mean_curvature =
                 ((*cloud_curvatures)[i].pc1 + (*cloud_curvatures)[i].pc2) / 2;
-        curvature->gaussian_curvature =
+        curvature.gaussian_curvature =
                 (*cloud_curvatures)[i].pc1 * (*cloud_curvatures)[i].pc2;
         //  [Wardetzky et al. 2007] total_curva = k1^2 + k2^2
-        curvature->total_curvature = pow((*cloud_curvatures)[i].pc1, 2) +
-                                     pow((*cloud_curvatures)[i].pc2, 2);
-        if (curvature->total_curvature < min_val)
-            min_val = curvature->total_curvature;
-        if (curvature->total_curvature > max_val)
-            max_val = curvature->total_curvature;
+        curvature.total_curvature = pow((*cloud_curvatures)[i].pc1, 2) +
+                                    pow((*cloud_curvatures)[i].pc2, 2);
+        if (curvature.total_curvature < min_val)
+            min_val = curvature.total_curvature;
+        if (curvature.total_curvature > max_val)
+            max_val = curvature.total_curvature;
         cloud.curvatures_.emplace_back(curvature);
     }
 
@@ -130,7 +130,7 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
     cloud.colors_.reserve(cloud.points_.size());
     for (int i = 0; i < cloud.curvatures_.size(); i++) {
         cloud.colors_.emplace_back(color_with_curvature(
-                cloud.curvatures_[i]->total_curvature, min_val, max_val));
+                cloud.curvatures_[i].total_curvature, min_val, max_val));
     }
 
     LOG_INFO("Compute curvature done");
@@ -156,9 +156,9 @@ void ComputeCurvature_TNV(geometry::PointCloud& cloud,
     double min_val = std::numeric_limits<double>::max();
     double max_val = std::numeric_limits<double>::min();
     for (int i = 0; i < cloud.points_.size(); i++) {
-        geometry::curvature* curvature = new geometry::curvature();
+        geometry::curvature curvature;
         // std::cout << total_curvatures[i] << std::endl;
-        curvature->total_curvature = total_curvatures[i];
+        curvature.total_curvature = total_curvatures[i];
         cloud.curvatures_.emplace_back(curvature);
         if (total_curvatures[i] < min_val) min_val = total_curvatures[i];
         if (total_curvatures[i] > max_val) max_val = total_curvatures[i];
@@ -169,7 +169,7 @@ void ComputeCurvature_TNV(geometry::PointCloud& cloud,
     cloud.colors_.resize(cloud.points_.size());
     for (int i = 0; i < cloud.curvatures_.size(); i++) {
         cloud.colors_[i] = color_with_curvature(
-                cloud.curvatures_[i]->total_curvature, min_val, max_val);
+                cloud.curvatures_[i].total_curvature, min_val, max_val);
     }
 }
 
@@ -280,18 +280,18 @@ void ComputeCurvature_PCA(geometry::PointCloud& cloud,
                                                  cloud.points_[i], indices);
             k1 = res.first;
             k2 = res.second;
-            geometry::curvature* writen_data = new geometry::curvature();
-            writen_data->total_curvature = pow(k1, 2) + pow(k2, 2);
+            geometry::curvature writen_data;
+            writen_data.total_curvature = pow(k1, 2) + pow(k2, 2);
 
             // fake data
-            writen_data->mean_curvature = (k1 + k2) / 2.0;
-            writen_data->gaussian_curvature = k1 * k2;
+            writen_data.mean_curvature = (k1 + k2) / 2.0;
+            writen_data.gaussian_curvature = k1 * k2;
             cloud.curvatures_[i] = writen_data;
 
-            if (writen_data->total_curvature < min_val)
-                min_val = writen_data->total_curvature;
-            if (writen_data->total_curvature > max_val)
-                max_val = writen_data->total_curvature;
+            if (writen_data.total_curvature < min_val)
+                min_val = writen_data.total_curvature;
+            if (writen_data.total_curvature > max_val)
+                max_val = writen_data.total_curvature;
         }
     }
 
@@ -299,7 +299,7 @@ void ComputeCurvature_PCA(geometry::PointCloud& cloud,
 #pragma omp parallel for
     for (int i = 0; i < cloud.curvatures_.size(); i++) {
         cloud.colors_[i] = color_with_curvature(
-                cloud.curvatures_[i]->total_curvature, min_val, max_val);
+                cloud.curvatures_[i].total_curvature, min_val, max_val);
     }
 }
 

@@ -5,6 +5,8 @@
 #include <pcl/point_types.h>
 #include <pcl/search/organized.h>
 
+#include <cmath>
+
 #include "Converter.h"
 #include "MathTool.h"
 
@@ -56,92 +58,182 @@ void ComputeNormals_PCL(geometry::PointCloud& cloud,
 
 void ComputeNormals_PCA(geometry::PointCloud& cloud,
                         geometry::KDTreeSearchParam& param) {
-    std::vector<Eigen::Matrix3d> covariances;
-    const bool has_covariance = cloud.HasCovariances();
-    cloud.covariances_.resize(cloud.points_.size());
-    if (!has_covariance) {
-        const auto& points = cloud.points_;
-        covariances.resize(points.size());
-        hymson3d::geometry::KDTree kdtree;
-        kdtree.SetData(cloud);
+    const size_t N = cloud.points_.size();
+    if (N == 0) return;
 
-#pragma omp parallel for schedule(static)
-        for (int i = 0; i < (int)points.size(); i++) {
-            std::vector<int> indices;
-            std::vector<double> distance2;
-            if (kdtree.Search(points[i], param, indices, distance2) >= 3) {
-                // std::cout << indices.size() << std::endl;
-                auto covariance = utility::ComputeCovariance(points, indices);
-                if (has_covariance && covariance.isIdentity(1e-4)) {
-                    covariances[i] = cloud.covariances_[i];
-                } else {
-                    covariances[i] = covariance;
-                }
+    bool has_cov = cloud.HasCovariances();
+    if (!has_cov) {
+        cloud.covariances_.resize(N);
+    }
+
+    cloud.normals_.resize(N);
+    cloud.curvatures_.resize(N);
+
+    std::unique_ptr<geometry::KDTree> kdtree_ptr;
+    if (!has_cov) {
+        kdtree_ptr = std::make_unique<geometry::KDTree>();
+        kdtree_ptr->SetData(cloud);
+    }
+
+#pragma omp parallel
+    {
+        // Thread Local Storage
+        // avoid repeated memory-allocation
+        std::vector<int> indices;
+        std::vector<double> dists;
+        indices.reserve(100);  // estimated k value
+        dists.reserve(100);
+
+#pragma omp for schedule(guided)
+        for (int i = 0; i < (int)N; i++) {
+            Eigen::Matrix3d covariance;
+            bool valid_covariance = false;
+
+            // --- stage 1: compute covariance ---
+            if (has_cov) {
+                covariance = cloud.covariances_[i];
+                valid_covariance = true;
             } else {
-                covariances[i] = Eigen::Matrix3d::Identity();
+                indices.clear();
+                dists.clear();
+                if (kdtree_ptr->Search(cloud.points_[i], param, indices,
+                                       dists) >= 3) {
+                    covariance =
+                            utility::ComputeCovariance(cloud.points_, indices);
+                    cloud.covariances_[i] = covariance;  // å­˜å›ç»“æœ
+                    valid_covariance = true;
+                } else {
+                    cloud.covariances_[i] = Eigen::Matrix3d::Identity();
+                }
             }
+
+            // --- stage 2. eigen decomposition && compute normal vector ---
+            // ç›´æ¥åœ¨å¯„å­˜å™¨/L1ç¼“å­˜ä¸­å¤„ç† covariance
+            geometry::curvature curv_ptr;  //
+
+            if (valid_covariance) {
+                auto result = utility::mathtool::FastEigen3x3(covariance);
+                cloud.normals_[i] = std::get<0>(result).normalized();
+
+                const auto& evals = std::get<1>(result);
+
+                // remove pow(2)
+                double e1 = evals[1];
+                double e2 = evals[2];
+
+                curv_ptr.gaussian_curvature = e1 * e2;
+                curv_ptr.mean_curvature = 0.5 * (e1 + e2);
+                curv_ptr.total_curvature = e1 * e1 + e2 * e2;
+            } else {
+                cloud.normals_[i].setZero();
+                curv_ptr.gaussian_curvature = 0;
+                curv_ptr.mean_curvature = 0;
+                curv_ptr.total_curvature = 0;
+            }
+            cloud.curvatures_[i] = curv_ptr;
         }
-    } else {
-        covariances = cloud.covariances_;
     }
 
-    bool has_normals = cloud.HasNormals();
-    if (!has_normals) {
-        cloud.normals_.resize(cloud.points_.size());
-    }
+    // ----------------------------------------------------------------------
 
-    cloud.normals_.resize(cloud.points_.size());
-    cloud.curvatures_.resize(cloud.points_.size());
+    //         std::vector<Eigen::Matrix3d> covariances;
+    //         const bool has_covariance = cloud.HasCovariances();
+    //         cloud.covariances_.resize(cloud.points_.size());
+    //         if (!has_covariance) {
+    //             const auto& points = cloud.points_;
+    //             covariances.resize(points.size());
+    //             hymson3d::geometry::KDTree kdtree;
+    //             kdtree.SetData(cloud);
+
     // #pragma omp parallel for schedule(static)
-    for (int i = 0; i < (int)covariances.size(); i++) {
-        auto result = utility::mathtool::FastEigen3x3(covariances[i]);
-        Eigen::Vector3d normal = std::get<0>(result).normalized();
-        std::vector<double> evals = std::get<1>(result);
+    //             for (int i = 0; i < (int)points.size(); i++) {
+    //                 std::vector<int> indices;
+    //                 std::vector<double> distance2;
+    //                 if (kdtree.Search(points[i], param, indices,
+    //                 distance2) >= 3) {
+    //                     // std::cout << indices.size() << std::endl;
+    //                     auto covariance =
+    //                             utility::ComputeCovariance(points,
+    //                             indices);
+    //                     if (has_covariance &&
+    //                     covariance.isIdentity(1e-4)) {
+    //                         covariances[i] = cloud.covariances_[i];
+    //                     } else {
+    //                         covariances[i] = covariance;
+    //                     }
+    //                 } else {
+    //                     covariances[i] = Eigen::Matrix3d::Identity();
+    //                 }
+    //             }
+    //         } else {
+    //             covariances = cloud.covariances_;
+    //         }
 
-        // Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d>
-        // solver(covariances[i]); Eigen::Vector3d eigenvalues =
-        // solver.eigenvalues(); Eigen::Matrix3d eigenvectors =
-        // solver.eigenvectors();
+    //         bool has_normals = cloud.HasNormals();
+    //         if (!has_normals) {
+    //             cloud.normals_.resize(cloud.points_.size());
+    //         }
 
-        // for (int j = 0; j < 3; j++) {
-        //     std::cout << evals[j] << ";" << eigenvalues(j) << std::endl;
-        // }
-        // std::cout << std::endl;
+    //         cloud.normals_.resize(cloud.points_.size());
+    //         cloud.curvatures_.resize(cloud.points_.size());
+    //         // #pragma omp parallel for schedule(static)
+    //         for (int i = 0; i < (int)covariances.size(); i++) {
+    //             auto result =
+    //             utility::mathtool::FastEigen3x3(covariances[i]);
+    //             Eigen::Vector3d normal =
+    //             std::get<0>(result).normalized(); std::vector<double>
+    //             evals = std::get<1>(result);
 
-        geometry::curvature* curvature = new geometry::curvature();
-        curvature->gaussian_curvature = evals[1] * evals[2];
-        curvature->mean_curvature = 0.5 * (evals[1] + evals[2]);
-        curvature->total_curvature = pow(evals[1], 2) + pow(evals[2], 2);
-        // viewpoint/tangentplane/givendirection
-        cloud.normals_[i] = normal;
-        cloud.covariances_[i] = covariances[i];
-        cloud.curvatures_[i] = curvature;
-    }
+    //             // Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d>
+    //             // solver(covariances[i]); Eigen::Vector3d
+    //             eigenvalues =
+    //             // solver.eigenvalues(); Eigen::Matrix3d eigenvectors
+    //             =
+    //             // solver.eigenvectors();
+
+    //             // for (int j = 0; j < 3; j++) {
+    //             //     std::cout << evals[j] << ";" << eigenvalues(j)
+    //             << std::endl;
+    //             // }
+    //             // std::cout << std::endl;
+
+    //             geometry::curvature* curvature = new
+    //             geometry::curvature(); curvature->gaussian_curvature
+    //             = evals[1] * evals[2]; curvature->mean_curvature =
+    //             0.5 * (evals[1] + evals[2]);
+    //             curvature->total_curvature = pow(evals[1], 2) +
+    //             pow(evals[2], 2);
+    //             // viewpoint/tangentplane/givendirection
+    //             cloud.normals_[i] = normal;
+    //             cloud.covariances_[i] = covariances[i];
+    //             cloud.curvatures_[i] = curvature;
+    //         }
 }
 
 void ComputeRotateNormals_PCA_Fast(geometry::PointCloud& cloud,
-                        const geometry::KDTreeSearchParam& param) {
+                                   const geometry::KDTreeSearchParam& param) {
     const size_t N = cloud.points_.size();
     const bool has_cov = cloud.HasCovariances();
     const bool has_norm = cloud.HasNormals();
 
-    // 1) Ô¤·ÖÅäËùÓĞÊä³öÈİÆ÷
+    // 1) Ô¤ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     cloud.covariances_.resize(N);
     cloud.normals_.resize(N);
     cloud.curvatures_.resize(N);
 
-    // 2) Ö»¹¹½¨Ò»´ÎÈ«¾Ö KDTree
+    // 2) Ö»ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½È«ï¿½ï¿½ KDTree
     hymson3d::geometry::KDTree global_kdtree;
     if (!has_cov) {
         global_kdtree.SetData(cloud);
     }
 
-    // 3) ²¢ĞĞ¼ÆËãĞ­·½²î£¨¹²Ïí global_kdtree£©
+    // 3) ï¿½ï¿½ï¿½Ğ¼ï¿½ï¿½ï¿½Ğ­ï¿½ï¿½ï¿½î£¨ï¿½ï¿½ï¿½ï¿½
+    // global_kdtreeï¿½ï¿½
     std::vector<Eigen::Matrix3d> covs(N);
 #pragma omp parallel for schedule(dynamic, 128)
     for (int i = 0; i < static_cast<int>(N); i++) {
         if (!has_cov) {
-            // Ã¿¸öÏß³ÌÀïÁÙÊ±ÉêÇë indices/d2£¬×Ô¶¯Îö¹¹
+            // Ã¿ï¿½ï¿½ï¿½ß³ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ indices/d2ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½
             std::vector<int> indices;
             std::vector<double> d2;
             int cnt =
@@ -159,23 +251,24 @@ void ComputeRotateNormals_PCA_Fast(geometry::PointCloud& cloud,
         }
     }
 
-    //std::vector<geometry::curvature> curvs(N);
+    // std::vector<geometry::curvature> curvs(N);
     const Eigen::Vector3d orientation_reference =
             Eigen::Vector3d(0.0, 0.0, 1.0);
-    // 4) ²¢ĞĞ¼ÆËã·¨ÏßºÍÇúÂÊ£¬Ö±½Ó new curvature ±£³ÖÔ­½Ó¿Ú
+    // 4) ï¿½ï¿½ï¿½Ğ¼ï¿½ï¿½ã·¨ï¿½ßºï¿½ï¿½ï¿½ï¿½Ê£ï¿½Ö±ï¿½ï¿½ new curvature ï¿½ï¿½ï¿½ï¿½Ô­ï¿½Ó¿ï¿½
 #pragma omp parallel for schedule(dynamic, 128)
     for (int i = 0; i < static_cast<int>(N); i++) {
-        // FastEigen3x3 ·µ»Ø (Ö÷ÌØÕ÷ÏòÁ¿, [¦Ë0,¦Ë1,¦Ë2])
+        // FastEigen3x3 ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, [ï¿½ï¿½0,ï¿½ï¿½1,ï¿½ï¿½2])
         auto [dir, evals] = utility::mathtool::FastEigen3x3(covs[i]);
         Eigen::Vector3d n = dir.normalized();
 
-        geometry::curvature* curvature = new geometry::curvature();
-        curvature->gaussian_curvature = evals[1] * evals[2];
-        curvature->mean_curvature = 0.5 * (evals[1] + evals[2]);
-        curvature->total_curvature = pow(evals[1], 2) + pow(evals[2], 2);
-        //curvs[i].gaussian_curvature = evals[1] * evals[2];
-        //curvs[i].mean_curvature = 0.5 * (evals[1] + evals[2]);
-        //curvs[i].total_curvature = evals[1] * evals[1] + evals[2] * evals[2];
+        geometry::curvature curvature;
+        curvature.gaussian_curvature = evals[1] * evals[2];
+        curvature.mean_curvature = 0.5 * (evals[1] + evals[2]);
+        curvature.total_curvature = pow(evals[1], 2) + pow(evals[2], 2);
+        // curvs[i].gaussian_curvature = evals[1] * evals[2];
+        // curvs[i].mean_curvature = 0.5 * (evals[1] + evals[2]);
+        // curvs[i].total_curvature = evals[1] * evals[1] + evals[2] *
+        // evals[2];
         if (n.norm() == 0.0) {
             n = orientation_reference;
         } else if (n.dot(orientation_reference) < 0.0) {
@@ -186,7 +279,6 @@ void ComputeRotateNormals_PCA_Fast(geometry::PointCloud& cloud,
         cloud.curvatures_[i] = curvature;
     }
 }
-
 
 // TODO:oritent the normal w.r.t
 void orient_normals_towards_positive_z(geometry::PointCloud& cloud) {
@@ -210,7 +302,9 @@ void normal_aggregation_x(geometry::PointCloud& cloud,
                           geometry::PointCloud::Ptr target_cloud,
                           float ratio) {
     if (!cloud.HasNormals()) {
-        LOG_ERROR("No normals in the PointCloud. Can not aggregate normals");
+        LOG_ERROR(
+                "No normals in the PointCloud. Can not aggregate "
+                "normals");
     }
     target_cloud->points_.resize(cloud.points_.size());
     target_cloud->normals_ = cloud.normals_;
@@ -227,7 +321,9 @@ void normal_aggregation_y(geometry::PointCloud& cloud,
                           geometry::PointCloud::Ptr target_cloud,
                           float ratio) {
     if (!cloud.HasNormals()) {
-        LOG_ERROR("No normals in the PointCloud. Can not aggregate normals");
+        LOG_ERROR(
+                "No normals in the PointCloud. Can not aggregate "
+                "normals");
     }
     target_cloud->points_.resize(cloud.points_.size());
     target_cloud->normals_ = cloud.normals_;

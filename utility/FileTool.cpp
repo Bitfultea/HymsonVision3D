@@ -212,7 +212,7 @@ void write_ply(const std::string& filename,
         curvature.reserve(pointcloud->points_.size());
         for (const auto& c : pointcloud->curvatures_) {
             // use total curvature for visualization
-            curvature.push_back(c->total_curvature);
+            curvature.push_back(c.total_curvature);
         }
         plyOut.getElement("vertex").addProperty<double>("curvature", curvature);
     }
