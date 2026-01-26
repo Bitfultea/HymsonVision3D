@@ -7,7 +7,17 @@ if(WIN32)
         "${WIN_DIR}/HymsonVision3D/thirdparty/open3d"
         "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/Qhull/include"
     )
-    target_link_libraries(thirdparty_lib nanoflann::nanoflann fmt::fmt  Qhull::qhullcpp Qhull::qhull_r)
+    target_compile_definitions(thirdparty_lib PRIVATE FMT_HEADER_ONLY)
+    if(MSVC)
+        # MSVC 取消 FMT_SHARED（注意必须连写成一个参数）
+        target_compile_options(thirdparty_lib PRIVATE "/UFMT_SHARED")
+    endif()
+    target_link_libraries(thirdparty_lib 
+                        nanoflann::nanoflann 
+                        # fmt::fmt 
+                        fmt::fmt-header-only 
+                        Qhull::qhullcpp 
+                        Qhull::qhull_r)
 elseif(UNIX)
     file(GLOB O3D_FILES "${CMAKE_CURRENT_SOURCE_DIR}/open3d/*.cpp")
     file(GLOB O3D_C_FILES "${CMAKE_CURRENT_SOURCE_DIR}/open3d/*.c")

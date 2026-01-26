@@ -11,13 +11,19 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 if(WIN32)
     # Link libraries
     target_link_libraries(utility_lib 
-        spdlog::spdlog 
-        fmt::fmt 
+        spdlog::spdlog_header_only
+        # spdlog::spdlog 
+        fmt::fmt-header-only
+        # fmt::fmt 
         Eigen3::Eigen
         ${OpenCV_LIBS}
         ${PCL_LIBRARIES}
         TIFF::TIFF
         )
+    target_compile_definitions(utility_lib PRIVATE FMT_HEADER_ONLY SPDLOG_FMT_EXTERNAL)
+    if(MSVC)
+        target_compile_options(utility_lib PRIVATE "/UFMT_SHARED" "/USPDLOG_SHARED_LIB")
+    endif()
     set_target_properties(utility_lib PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 else()

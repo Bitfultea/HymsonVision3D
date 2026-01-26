@@ -118,6 +118,27 @@ endif()
 
 ##########################################################
 
+if (WIN32)
+  function(use_headeronly_logging tgt)
+    # 提供 include + target，避免找不到头/target，也避免链接 DLL 导入符号
+    target_link_libraries(${tgt}
+      spdlog::spdlog_header_only
+      fmt::fmt-header-only
+    )
+
+    # 强制 header-only + spdlog 使用外部 fmt
+    target_compile_definitions(${tgt} PRIVATE
+      FMT_HEADER_ONLY
+      SPDLOG_FMT_EXTERNAL
+    )
+
+    # 取消 DLL 模式宏（MSVC 需要连写成一个参数）
+    if(MSVC)
+      target_compile_options(${tgt} PRIVATE "/UFMT_SHARED" "/USPDLOG_SHARED_LIB" "/USPDLOG_COMPILED_LIB")
+    endif()
+  endfunction()
+endif()
+
 enable_testing()
 
 
@@ -148,6 +169,9 @@ target_link_libraries(
   pipeline
   core_lib
 )
+if(WIN32)
+  use_headeronly_logging(planar_test)
+endif()
 
 target_link_libraries(
   calib_test
@@ -209,3 +233,7 @@ target_link_libraries(
   core_lib
   ml3d_lib
 )
+
+if(WIN32)
+  use_headeronly_logging(ml_test)
+endif()

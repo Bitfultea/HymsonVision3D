@@ -13,9 +13,15 @@ if(WIN32)
         core_lib
         ml3d_lib
         nvinfer
+        spdlog::spdlog_header_only
+        fmt::fmt-header-only
         # ${CUDA_LIBRARIES}
         #fmt::fmt
         )
+    target_compile_definitions(pipeline PRIVATE FMT_HEADER_ONLY SPDLOG_FMT_EXTERNAL)
+    if(MSVC)
+        target_compile_options(pipeline PRIVATE "/UFMT_SHARED" "/USPDLOG_SHARED_LIB" "/USPDLOG_COMPILED_LIB")
+    endif()
     set_target_properties(pipeline PROPERTIES 
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 else()
