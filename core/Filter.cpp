@@ -92,7 +92,7 @@ Filter::VoxelDownSample(PointCloud::Ptr point_cloud, float voxel_size) {
 }
 
 PointCloud::Ptr Filter::IndexDownSample(PointCloud::Ptr point_cloud,
-                                        const std::vector<size_t> &indices,
+                                        const std::vector<size_t>& indices,
                                         bool invert) {
     auto output = std::make_shared<PointCloud>();
     bool has_normals = point_cloud->HasNormals();
@@ -130,6 +130,49 @@ PointCloud::Ptr Filter::IndexDownSample(PointCloud::Ptr point_cloud,
     return output;
 }
 
+PointCloud::Ptr Filter::UniformDownSample(PointCloud::Ptr point_cloud,
+                                          size_t every_k_points) const {
+    if (every_k_points == 0) {
+        LOG_ERROR("Illegal sample rate.");
+    }
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < point_cloud->points_.size(); i += every_k_points) {
+        indices.push_back(i);
+    }
+    return SelectByIndex(point_cloud, indices);
+}
+
+PointCloud::Ptr Filter::SelectByIndex(PointCloud::Ptr point_cloud,
+                                      const std::vector<size_t>& indices,
+                                      bool invert /* = false */) const {
+    auto output = std::make_shared<PointCloud>();
+    bool has_normals = point_cloud->HasNormals();
+    bool has_colors = point_cloud->HasColors();
+    bool has_covariance = point_cloud->HasCovariances();
+
+    std::vector<bool> mask =
+            std::vector<bool>(point_cloud->points_.size(), invert);
+    for (size_t i : indices) {
+        mask[i] = !invert;
+    }
+
+    for (size_t i = 0; i < point_cloud->points_.size(); i++) {
+        if (mask[i]) {
+            output->points_.push_back(point_cloud->points_[i]);
+            if (has_normals)
+                output->normals_.push_back(point_cloud->normals_[i]);
+            if (has_colors) output->colors_.push_back(point_cloud->colors_[i]);
+            if (has_covariance)
+                output->covariances_.push_back(point_cloud->covariances_[i]);
+        }
+    }
+
+    LOG_DEBUG("Pointcloud down sampled from {:d} points to {:d} points.",
+              (int)point_cloud->points_.size(), (int)output->points_.size());
+
+    return output;
+}
+
 std::tuple<PointCloud::Ptr, std::vector<size_t>> Filter::StatisticalOutliers(
         PointCloud::Ptr pointcloud, size_t nb_neighbors, double std_ratio) {
     if (nb_neighbors < 1 || std_ratio <= 0) {
@@ -159,7 +202,7 @@ std::tuple<PointCloud::Ptr, std::vector<size_t>> Filter::StatisticalOutliers(
         if (dist.size() > 0u) {
             valid_distances++;
             std::for_each(dist.begin(), dist.end(),
-                          [](double &d) { d = std::sqrt(d); });
+                          [](double& d) { d = std::sqrt(d); });
             mean = std::accumulate(dist.begin(), dist.end(), 0.0) / dist.size();
         }
         avg_distances[i] = mean;
@@ -171,12 +214,12 @@ std::tuple<PointCloud::Ptr, std::vector<size_t>> Filter::StatisticalOutliers(
     }
     double cloud_mean = std::accumulate(
             avg_distances.begin(), avg_distances.end(), 0.0,
-            [](double const &x, double const &y) { return y > 0 ? x + y : x; });
+            [](double const& x, double const& y) { return y > 0 ? x + y : x; });
     cloud_mean /= valid_distances;
     double sq_sum = std::inner_product(
             avg_distances.begin(), avg_distances.end(), avg_distances.begin(),
-            0.0, [](double const &x, double const &y) { return x + y; },
-            [cloud_mean](double const &x, double const &y) {
+            0.0, [](double const& x, double const& y) { return x + y; },
+            [cloud_mean](double const& x, double const& y) {
                 return x > 0 ? (x - cloud_mean) * (y - cloud_mean) : 0;
             });
     // Bessel's correction
@@ -224,21 +267,21 @@ PointCloud::Ptr Filter::AxiFilter(PointCloud::Ptr point_cloud,
     std::shared_ptr<PointCloud> output = std::make_shared<PointCloud>();
     switch (axis) {
         case Axi_X:
-            for (auto &point : point_cloud->points_) {
+            for (auto& point : point_cloud->points_) {
                 if (point.x() >= range.first && point.x() <= range.second) {
                     output->points_.emplace_back(point);
                 }
             }
             break;
         case Axi_Y:
-            for (auto &point : point_cloud->points_) {
+            for (auto& point : point_cloud->points_) {
                 if (point.y() >= range.first && point.y() <= range.second) {
                     output->points_.emplace_back(point);
                 }
             }
             break;
         case Axi_Z:
-            for (auto &point : point_cloud->points_) {
+            for (auto& point : point_cloud->points_) {
                 if (point.z() >= range.first && point.z() <= range.second) {
                     output->points_.emplace_back(point);
                 }

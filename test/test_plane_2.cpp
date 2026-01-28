@@ -6,6 +6,7 @@
 #include "DiskLevelMeasurement.h"
 #include "Feature.h"
 #include "FileTool.h"
+#include "Filter.h"
 #include "Logger.h"
 #include "Normal.h"
 #include "Raster.h"
@@ -20,16 +21,18 @@ int main(int argc, char** argv) {
 
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
-    //core::converter::tiff_to_pointcloud(argv[1], pointcloud,
-    //                                    Eigen::Vector3d(1, 1, 200), false);
+    // core::converter::tiff_to_pointcloud(argv[1], pointcloud,
+    //                                     Eigen::Vector3d(1, 1, 200), false);
 
     cv::Mat tiff_image;
     utility::read_tiff(argv[1], tiff_image);
     int kernal_size = 101;
     float delta = 1.5;
-    pipeline::DiskLevelMeasurement::preprocess_img(tiff_image, kernal_size, delta);
+    pipeline::DiskLevelMeasurement::preprocess_img(tiff_image, kernal_size,
+                                                   delta);
     core::converter::mat_to_pointcloud(tiff_image, pointcloud,
                                        Eigen::Vector3d(1, 1, 200), false);
+
     core::PointCloudRaster raster;
     std::cout << "type of tiff_image:" << tiff_image.type() << std::endl;
     cv::Mat pre_processed = raster.project_to_feature_frame(tiff_image);
@@ -41,9 +44,10 @@ int main(int argc, char** argv) {
         float normal_degree = 1;
         float curvature_threshold = 0.0;
         bool use_curvature = false;
-        float central_plane_size = 75.0;
+        float central_plane_size = 100.0;
         float distance_threshold = 0.0;
-        int min_planar_points = 100;
+        int min_planar_points = 50;
+        int down_sample_size = 2;
         int method = 1;
         geometry::KDTreeSearchParamRadius param(radius);
 
@@ -56,7 +60,7 @@ int main(int argc, char** argv) {
         pipeline::DiskLevelMeasurement::perform_measurement(
                 pointcloud, param, &result, disk_centre, central_plane_size,
                 normal_degree, distance_threshold, min_planar_points, method,
-                debug_mode);
+                down_sample_size, debug_mode);
         //     pipeline::DiskLevelMeasurement::measure_pindisk_heightlevel(
         //             pointcloud, param, &result, central_plane_size,
         //             normal_degree, distance_threshold, min_planar_points,

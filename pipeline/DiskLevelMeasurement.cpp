@@ -19,17 +19,17 @@ std::vector<float> statistical_filter(const std::vector<float>& data,
                                       const float& n) {
     if (data.empty()) return {};
     int size = data.size();
-    // 1. ¼ÆËã¾ùÖµ
+    // 1. ï¿½ï¿½ï¿½ï¿½ï¿½Öµ
     float mean = std::accumulate(data.begin(), data.end(), 0.0) / size;
 
-    // 2. ¼ÆËã±ê×¼²î
+    // 2. ï¿½ï¿½ï¿½ï¿½ï¿½×¼ï¿½ï¿½
     float sum_squared_diff = 0.0;
     for (const auto& val : data) {
         sum_squared_diff += (val - mean) * (val - mean);
     }
     float std_dev = std::sqrt(sum_squared_diff / data.size());
 
-    // 3. ¹ýÂË³¬³ö mean ¡À n*¦Ò µÄÖµ
+    // 3. ï¿½ï¿½ï¿½Ë³ï¿½ï¿½ï¿½ mean ï¿½ï¿½ n*ï¿½ï¿½ ï¿½ï¿½Öµ
     std::vector<float> filtered;
 
     for (int i = 0; i < size; ++i) {
@@ -46,7 +46,7 @@ void fixCorner(cv::Mat& img,
                int x,
                int ks,
                float delta) {
-    // Èç¹û½Çµã²»ÊÇÒì³££¬Ö±½Ó·µ»Ø
+    // ï¿½ï¿½ï¿½ï¿½Çµã²»ï¿½ï¿½ï¿½ì³£ï¿½ï¿½Ö±ï¿½Ó·ï¿½ï¿½ï¿½
     if (abnormalMask.at<uchar>(y, x) == 0) return;
     // float sum = 0.f;
     // int cnt = 0;
@@ -60,13 +60,13 @@ void fixCorner(cv::Mat& img,
     const int rows = img.rows;
     const int cols = img.cols;
 
-    // ===== ¸ù¾Ý½ÇµãÎ»ÖÃ²Ã¼ôÁÚÓò·¶Î§ =====
+    // ===== ï¿½ï¿½ï¿½Ý½Çµï¿½Î»ï¿½Ã²Ã¼ï¿½ï¿½ï¿½ï¿½ï¿½Î§ =====
     const int y0 = std::max(0, y - step);
     const int y1 = std::min(rows - 1, y + step);
     const int x0 = std::max(0, x - step);
     const int x1 = std::min(cols - 1, x + step);
-    // ===== Ö¸Õë·ÃÎÊ + ÎÞ±ß½çÅÐ¶ÏÄÚ²ãÑ­»· =====
-    //Ôö¼Ó¾ùÖµºÍ±ê×¼²îÂË²¨
+    // ===== Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ + ï¿½Þ±ß½ï¿½ï¿½Ð¶ï¿½ï¿½Ú²ï¿½Ñ­ï¿½ï¿½ =====
+    // ï¿½ï¿½ï¿½Ó¾ï¿½Öµï¿½Í±ï¿½×¼ï¿½ï¿½ï¿½Ë²ï¿½
     std::vector<float> temp;
     for (int yy = y0; yy <= y1; ++yy) {
         const float* imgPtr = img.ptr<float>(yy);
@@ -92,51 +92,46 @@ void fixCorner(cv::Mat& img,
     }
 }
 
-    bool DiskLevelMeasurement::preprocess_img(cv::Mat& tiff_image,
-    int ks, float delta) {
-        try {
-            //Òì³£½Çµã¼ì²â
-            double minVal, maxVal;
-            cv::minMaxLoc(tiff_image, &minVal, &maxVal);
-            if ((maxVal - minVal) > 500) {
-                // std::cout << "minVal:" << minVal << "maxVal:" << maxVal <<
-                // std::endl;
-                cv::Mat mask1 =
-                        ((tiff_image - minVal) >=
-                         0.5 * (maxVal - minVal));  //Òì³£ÖµÔÚ´ó²¿·ÖÊýÖµÏÂ·½
-                cv::Mat mask2 =
-                        ((tiff_image - minVal) < 0.5 * (maxVal - minVal));
-                int count1 = cv::countNonZero(mask1);
-                int count2 = cv::countNonZero(mask2);
-                //int ks = 101;
-                //float delta = 1.5;
-                if (count1 >= count2) {
-                    //ÅÐ¶Ï½ÇµãÊÇ·ñÊÇÒì³£Öµ
-                    fixCorner(tiff_image, mask2, 0, 0, ks, delta);
-                    fixCorner(tiff_image, mask2, 0, tiff_image.cols - 1, ks,
-                              delta);
-                    fixCorner(tiff_image, mask2, tiff_image.rows - 1, 0, ks,
-                              delta);
-                    fixCorner(tiff_image, mask2, tiff_image.rows - 1,
-                              tiff_image.cols - 1, ks, delta);
-                } else {
-                    fixCorner(tiff_image, mask1, 0, 0, ks, delta);
-                    fixCorner(tiff_image, mask1, 0, tiff_image.cols - 1, ks,
-                              delta);
-                    fixCorner(tiff_image, mask1, tiff_image.rows - 1, 0, ks,
-                              delta);
-                    fixCorner(tiff_image, mask1, tiff_image.rows - 1,
-                              tiff_image.cols - 1, ks, delta);
-                }
+bool DiskLevelMeasurement::preprocess_img(cv::Mat& tiff_image,
+                                          int ks,
+                                          float delta) {
+    try {
+        // ï¿½ì³£ï¿½Çµï¿½ï¿½ï¿½
+        double minVal, maxVal;
+        cv::minMaxLoc(tiff_image, &minVal, &maxVal);
+        if ((maxVal - minVal) > 500) {
+            // std::cout << "minVal:" << minVal << "maxVal:" << maxVal <<
+            // std::endl;
+            cv::Mat mask1 =
+                    ((tiff_image - minVal) >=
+                     0.5 * (maxVal -
+                            minVal));  // ï¿½ì³£Öµï¿½Ú´ó²¿·ï¿½ï¿½ï¿½Öµï¿½Â·ï¿½
+            cv::Mat mask2 = ((tiff_image - minVal) < 0.5 * (maxVal - minVal));
+            int count1 = cv::countNonZero(mask1);
+            int count2 = cv::countNonZero(mask2);
+            // int ks = 101;
+            // float delta = 1.5;
+            if (count1 >= count2) {
+                // ï¿½Ð¶Ï½Çµï¿½ï¿½Ç·ï¿½ï¿½ï¿½ï¿½ì³£Öµ
+                fixCorner(tiff_image, mask2, 0, 0, ks, delta);
+                fixCorner(tiff_image, mask2, 0, tiff_image.cols - 1, ks, delta);
+                fixCorner(tiff_image, mask2, tiff_image.rows - 1, 0, ks, delta);
+                fixCorner(tiff_image, mask2, tiff_image.rows - 1,
+                          tiff_image.cols - 1, ks, delta);
+            } else {
+                fixCorner(tiff_image, mask1, 0, 0, ks, delta);
+                fixCorner(tiff_image, mask1, 0, tiff_image.cols - 1, ks, delta);
+                fixCorner(tiff_image, mask1, tiff_image.rows - 1, 0, ks, delta);
+                fixCorner(tiff_image, mask1, tiff_image.rows - 1,
+                          tiff_image.cols - 1, ks, delta);
             }
-            return true;
-        } catch (...) {
-            LOG_ERROR("Failed to perform preprocess_img.");
-            return false;
         }
-
-
+        return true;
+    } catch (...) {
+        LOG_ERROR("Failed to perform preprocess_img.");
+        return false;
     }
+}
 
 bool DiskLevelMeasurement::perform_measurement(
         std::shared_ptr<geometry::PointCloud> cloud,
@@ -148,13 +143,14 @@ bool DiskLevelMeasurement::perform_measurement(
         float distance_threshold,
         int min_planar_points,
         int method,
+        int down_sample_size,
         bool debug_mode) {
     bool status;
     if (method == 0) {
         status = measure_pindisk_heightlevel_auto(
                 cloud, param, result, disk_centre, central_plane_size,
                 normal_angle_threshold, distance_threshold, min_planar_points,
-                debug_mode);
+                down_sample_size, debug_mode);
         if (!status) {
             LOG_ERROR("Failed to perform measurement");
             return false;
@@ -163,7 +159,7 @@ bool DiskLevelMeasurement::perform_measurement(
         status = measure_pindisk_heightlevel_region(
                 cloud, param, result, disk_centre, central_plane_size,
                 normal_angle_threshold, distance_threshold, min_planar_points,
-                debug_mode);
+                down_sample_size, debug_mode);
         if (!status) {
             LOG_ERROR("Failed to perform measurement");
             return false;
@@ -185,6 +181,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
         float normal_angle_threshold,
         float distance_threshold,
         int min_planar_points,
+        int down_sample_size,
         bool debug_mode) {
     // get planar points
     std::vector<geometry::Plane::Ptr> planes;
@@ -251,6 +248,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region(
         float normal_angle_threshold,
         float distance_threshold,
         int min_planar_points,
+        int down_sample_size,
         bool debug_mode) {
     int row = cloud->height_;
     int col = cloud->width_;
@@ -285,6 +283,9 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region(
                 bot_cloud->GetMaxBound().y(), 100);
     }
 
+    std::shared_ptr<core::Filter> filter = std::make_shared<core::Filter>();
+    cloud = filter->UniformDownSample(cloud, down_sample_size);
+
     bool use_ransc = true;
     geometry::Plane::Ptr central_plane =
             get_plane_in_range(cloud, param, disk_centre, central_plane_size,
@@ -296,6 +297,12 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region(
     }
 
     if (debug_mode) {
+        LOG_DEBUG(
+                "Central plane info: \n Center: {}, {}, {}; \n Normal: {}, {}, "
+                "{};",
+                central_plane->center_.x(), central_plane->center_.y(),
+                central_plane->center_.z(), central_plane->normal_.x(),
+                central_plane->normal_.y(), central_plane->normal_.z());
         utility::write_plane_mesh_ply(
                 "central_plane.ply", *central_plane,
                 central_plane->center_.x() - central_plane_size / 2,
@@ -475,7 +482,7 @@ void DiskLevelMeasurement::segment_plane_instances(
     // preform plane instance segmentation
     float radius = param.radius_;
     float curvature_threshold = 0.0f;
-    int planar_proposal_size = 100;
+    int planar_proposal_size = min_planar_points;
     int num_plane_candicates = core::Cluster::PlanarCluster(
             *cloud, radius, normal_angle_threshold, curvature_threshold, false,
             planar_proposal_size, debug_mode);
@@ -706,6 +713,8 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
     }
 
     if (debug_mode) {
+        LOG_DEBUG("Centroid plane normal: [{},{},{}]", max_plane->normal_[0],
+                  max_plane->normal_[1], max_plane->normal_[2]);
         utility::write_ply("centroid_pts.ply", max_plane->inlier_points_);
     }
 

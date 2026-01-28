@@ -160,7 +160,7 @@ public:
     VoxelDownSample(PointCloud::Ptr point_cloud, float voxel_size);
 
     PointCloud::Ptr UniformDownSample(PointCloud::Ptr point_cloud,
-                                      size_t every_k_points);
+                                      size_t every_k_points) const;
 
     PointCloud::Ptr RandomDownSample(PointCloud::Ptr point_cloud,
                                      double sampling_ratio);
@@ -168,6 +168,9 @@ public:
     PointCloud::Ptr IndexDownSample(PointCloud::Ptr point_cloud,
                                     const std::vector<size_t>& indices,
                                     bool invert = false);
+    PointCloud::Ptr SelectByIndex(PointCloud::Ptr point_cloud,
+                                  const std::vector<size_t>& indices,
+                                  bool invert = false) const;
 
     PointCloud::Ptr AxiFilter(PointCloud::Ptr point_cloud,
                               std::pair<double, double> range,
