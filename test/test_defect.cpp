@@ -144,7 +144,7 @@ int main(int argc, char** argv) {
     float normal_degree = 2.0;
     float curvature_threshold = 5;
     int min_defects_size = 500;
-    float z_threshold = 5.0;
+    float z_threshold = 7.0;
     float radius = 2.0;
     bool debug_mode = true;
     std::cout << "z_ratio:" << z_ratio << std::endl;

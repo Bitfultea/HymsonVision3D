@@ -158,6 +158,45 @@ std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
     return {false, cv::Point2f(0, 0)};
 }
 
+std::pair<bool, cv::Point2f> detect_deep_ring(const geometry::PointCloud& cloud,
+                                              float z_gap,
+                                              int central_area,
+                                              bool debug_mode) {
+    Eigen::Vector3d min_bound = cloud.GetMinBound();
+    Eigen::Vector3d max_bound = cloud.GetMaxBound();
+    float total_z = max_bound[2] - min_bound[2];
+    int z_slice_num = total_z / z_gap;
+    std::vector<std::vector<Eigen::Vector3d>> z_slices_point(z_slice_num);
+    // std::vector<float> slices_average_z(z_slice_num);
+    std::cout << " 0 z_slice_num: " << z_slice_num << std::endl;
+
+    for (int i = 0; i < cloud.points_.size(); i++) {
+        int z_slice_idx = std::min(
+                static_cast<int>((cloud.points_[i][2] - min_bound[2]) / z_gap),
+                z_slice_num - 1);
+        // std::cout << "z_slice_idx: " << z_slice_idx << std::endl;
+        z_slices_point[z_slice_idx].push_back(cloud.points_[i]);
+    }
+
+    std::cout << "z_slice_num: " << z_slice_num << std::endl;
+    std::vector<std::vector<Eigen::Vector3d>> z_slices_selected;
+    for (int i = 0; i < z_slice_num; i++) {
+        if (z_slices_point[i].size() > central_area) {
+            z_slices_selected.push_back(z_slices_point[i]);
+        }
+    }
+    std::cout << "z_slices_selected: " << z_slices_selected.size() << std::endl;
+
+    float central_x, central_y;
+    for (int i = 0; i < z_slices_selected.back().size(); i++) {
+        central_x += z_slices_selected.back()[i][0];
+        central_y += z_slices_selected.back()[i][1];
+    }
+    central_x /= z_slices_selected.back().size();
+    central_y /= z_slices_selected.back().size();
+
+    return {true, cv::Point2f(central_x, central_y)};
+}
 }  // namespace feature
 }  // namespace core
 }  // namespace hymson3d
