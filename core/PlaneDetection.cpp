@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "2D/Curve.h"
+#include "FileTool.h"
 #include "Filter.h"
 #include "open3d/TriangleMesh.h"
 
@@ -638,5 +639,97 @@ void PlaneDetection::plot_curve(std::vector<double> x_vec,
                 bg);
 }
 
+Eigen::VectorXd PlaneDetection::fit_a_quadratic_surface(
+        const std::vector<Eigen::Vector3d>& cloud,
+        float thresholdVal,
+        int sample_step,
+        int iterations,
+        bool debug_mode) {
+    size_t n_points = cloud.size();
+
+    Eigen::VectorXd coeffs;
+    coeffs.setZero();
+
+    // 1-inlier; 0-outlier
+    std::vector<uint8_t> is_inlier((n_points + sample_step - 1) / sample_step,
+                                   1);
+
+    for (int iter = 0; iter < iterations; ++iter) {
+        Eigen::MatrixXd AtA = Eigen::MatrixXd::Zero(6, 6);
+        Eigen::VectorXd Atb = Eigen::VectorXd::Zero(6);
+
+#pragma omp parallel
+        {
+            Eigen::MatrixXd localAtA = Eigen::MatrixXd::Zero(6, 6);
+            Eigen::VectorXd localAtb = Eigen::VectorXd::Zero(6);
+
+#pragma omp for nowait
+            for (int i = 0; i < (int)n_points; i += sample_step) {
+                int sample_idx = i / sample_step;
+
+                if (iter > 0 && !is_inlier[sample_idx]) continue;
+
+                // TODO: use the gap of the point to the centroid
+                const auto& p = cloud[i];
+                double x = p.x();
+                double y = p.y();
+                double z = p.z();
+
+                // Ax=b; A matrix
+                Eigen::Matrix<double, 6, 1> r;
+                r << x * x, y * y, x * y, x, y, 1.0;
+
+                localAtA.selfadjointView<Eigen::Lower>().rankUpdate(r);
+                localAtb += r * z;
+            }
+#pragma omp critical
+            {
+                AtA += localAtA;
+                Atb += localAtb;
+            }
+        }
+        AtA.triangularView<Eigen::Upper>() =
+                AtA.triangularView<Eigen::Lower>().transpose();
+        // AtA.selfadjointView<Eigen::Upper>() =
+        //         AtA.selfadjointView<Eigen::Lower>();
+
+        coeffs = AtA.ldlt().solve(Atb);  // Ax=b equation solver
+
+        // update inlier
+        if (iter < iterations - 1) {
+#pragma omp parallel for
+            for (int i = 0; i < (int)n_points; i += sample_step) {
+                int sample_idx = i / sample_step;
+                const auto& p = cloud[i];
+
+                double z_ref = coeffs[0] * p.x() * p.x() +
+                               coeffs[1] * p.y() * p.y() +
+                               coeffs[2] * p.x() * p.y() + coeffs[3] * p.x() +
+                               coeffs[4] * p.y() + coeffs[5];
+
+                if (std::abs(p.z() - z_ref) > thresholdVal) {
+                    is_inlier[sample_idx] = 0;  // mark as outlier
+                } else {
+                    is_inlier[sample_idx] = 1;
+                }
+            }
+        }
+    }
+
+    if (debug_mode) {
+        PointCloud::Ptr cloud_ptr = std::make_shared<PointCloud>();
+        for (int i = 0; i < (int)n_points; i += sample_step) {
+            int sample_idx = i / sample_step;
+            if (is_inlier[sample_idx]) {
+                cloud_ptr->points_.push_back(cloud[i]);
+            }
+        }
+        cloud_ptr->PaintUniformColor(Eigen::Vector3d(0.0, 0.0, 1.0));
+        utility::write_ply("surface.ply", cloud_ptr,
+                           utility::FileFormat::BINARY);
+    }
+
+    return coeffs;
+}
 }  // namespace core
 }  // namespace hymson3d

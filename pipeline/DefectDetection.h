@@ -47,10 +47,17 @@ public:
     static void detect_smooth_surface(
             std::shared_ptr<geometry::PointCloud> cloud,
             geometry::KDTreeSearchParamRadius param,
-            float normal_degree,
-            float curvature_threshold,
+            float normal_degree = 1.0,
+            float curvature_threshold = 5.0,
             int min_defects_size = 500,
             float z_threshold = 0.0,
+            bool debug_mode = true);
+
+    static void detect_smooth_surface(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            int sample_step = 1,
+            float surface_thresholdVal = 0.3,
+            float detection_threshold = 0.0,
             bool debug_mode = true);
 
     static void detect_pinholes_nva_dll(
@@ -193,6 +200,20 @@ private:
 
     static void plot_matrix(Eigen::MatrixXd& mat,
                             std::string name = "matrix.png");
+
+    //     static void smooth_surface_featureBased(
+    //             std::shared_ptr<geometry::PointCloud> cloud,
+    //             geometry::KDTreeSearchParamRadius param,
+    //             float normal_degree,
+    //             float curvature_threshold,
+    //             int min_defects_size = 500,
+    //             float z_threshold = 0.0,
+    //             bool debug_mode = true);
+
+    //         static void smooth_surface_coeffBased(
+    //                 std::shared_ptr<geometry::PointCloud> cloud,
+    //                 float z_threshold = 0.0,
+    //                 bool debug_mode = true);
 };
 
 }  // namespace pipeline

@@ -77,6 +77,13 @@ public:
                                 int plot_id = 0,
                                 bool debug_mode = true);
 
+    Eigen::VectorXd fit_a_quadratic_surface(
+            const std::vector<Eigen::Vector3d>& cloud,
+            float thresholdVal,
+            int sample_step = 1,
+            int iterations = 2,
+            bool debug_mode = true);
+
     std::vector<Eigen::Vector2d> resample_a_curve(
             std::vector<Eigen::Vector2d> control_pts,
             int sampled_pts,

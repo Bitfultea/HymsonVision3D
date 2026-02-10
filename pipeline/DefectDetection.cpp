@@ -344,6 +344,78 @@ void DefectDetection::detect_smooth_surface(
                            utility::FileFormat::BINARY);
     }
 }
+
+void DefectDetection::detect_smooth_surface(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        int sample_step,
+        float surface_thresholdVal,
+        float detection_threshold,
+        bool debug_mode) {
+    size_t n_points = cloud->points_.size();
+
+    // for surface generation
+    int iterations = 2;
+
+    // defect indexes
+    std::vector<int> bump_indices;
+    std::vector<int> dent_indices;
+
+    core::PlaneDetection surface_detector;
+    Eigen::VectorXd surface_coeffs = surface_detector.fit_a_quadratic_surface(
+            cloud->points_, surface_thresholdVal, sample_step, iterations);
+
+    std::vector<int> local_bumps, local_dents;
+#pragma omp parallel private(local_bumps, local_dents)
+    {
+#pragma omp for nowait
+        for (int i = 0; i < (int)n_points; ++i) {
+            const auto& p = cloud->points_[i];
+            double z_ref = surface_coeffs[0] * p.x() * p.x() +
+                           surface_coeffs[1] * p.y() * p.y() +
+                           surface_coeffs[2] * p.x() * p.y() +
+                           surface_coeffs[3] * p.x() +
+                           surface_coeffs[4] * p.y() + surface_coeffs[5];
+
+            double diff = p.z() - z_ref;
+
+            if (diff > detection_threshold) {
+                local_bumps.push_back(i);
+            } else if (diff < -detection_threshold) {
+                local_dents.push_back(i);
+            }
+        }
+#pragma omp critical
+        {
+            bump_indices.insert(bump_indices.end(), local_bumps.begin(),
+                                local_bumps.end());
+            dent_indices.insert(dent_indices.end(), local_dents.begin(),
+                                local_dents.end());
+        }
+    }
+
+    LOG_DEBUG("Detect {} bumps and {} dents.", bump_indices.size(),
+              dent_indices.size());
+
+    if (debug_mode) {
+        Eigen::Vector3d bump_color{1.0, 0.0, 0.0};
+        Eigen::Vector3d dent_color{0.0, 0.0, 1.0};
+        cloud->PaintUniformColor(Eigen::Vector3d(1.0, 1.0, 1.0));
+
+#pragma omp parallel for
+        for (int i = 0; i < bump_indices.size(); i++) {
+            // std::cout << "Bump " << i << ": " << bump_indices[i] <<
+            // std::endl;
+            cloud->colors_[bump_indices[i]] = bump_color;
+        }
+#pragma omp parallel for
+        for (int i = 0; i < dent_indices.size(); i++) {
+            cloud->colors_[dent_indices[i]] = dent_color;
+        }
+
+        utility::write_ply("surface_deftec.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+}
 void DefectDetection::detect_pinholes(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,
@@ -1383,7 +1455,8 @@ DefectDetection::SegmentByYContinuity(const geometry::PointCloud& cloud,
         double y_curr = y_idx[k].first;
         int idx_curr = y_idx[k].second;
 
-        // �����ǰ���ǰһ������ Y �ϵľ��볬����ֵ���Ϳ���һ������Ƭ
+        // �����ǰ���ǰһ������ Y
+        // �ϵľ��볬����ֵ���Ϳ���һ������Ƭ
         if (y_curr - y_prev > dy_thresh) {
             current_label++;
             end = y_prev;

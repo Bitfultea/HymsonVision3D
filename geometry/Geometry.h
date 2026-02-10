@@ -18,7 +18,8 @@ public:
         Mesh = 5,
         OrientedBoundingBox = 6,
         AxisAlignedBoundingBox = 7,
-        Plane = 8
+        Plane = 8,
+        Surface = 9
     };
 
 public:

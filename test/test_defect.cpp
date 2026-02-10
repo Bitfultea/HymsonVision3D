@@ -156,9 +156,16 @@ int main(int argc, char** argv) {
     }
 
     geometry::KDTreeSearchParamRadius param(radius);
-    pipeline::DefectDetection::detect_smooth_surface(
-            pointcloud, param, normal_degree, curvature_threshold,
-            min_defects_size, z_threshold, debug_mode);
+    // pipeline::DefectDetection::detect_smooth_surface(
+    //         pointcloud, param, normal_degree, curvature_threshold,
+    //         min_defects_size, z_threshold, debug_mode);
+
+    int sample_step = 1;
+    float surface_threshold = 1.5;
+    z_threshold = 3.0;
+    pipeline::DefectDetection::detect_smooth_surface(pointcloud, sample_step,
+                                                     surface_threshold,
+                                                     z_threshold, debug_mode);
 
     return 0;
 }

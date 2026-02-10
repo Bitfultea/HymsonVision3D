@@ -18,13 +18,13 @@ public:
     ~Image() override {}
 
 public:
-    Image &Clear() override;
+    Image& Clear() override;
     virtual bool HasData() const { return !data_.empty(); };
     bool IsEmpty() const override;
     Eigen::Vector2d GetMinBound() const override;
     Eigen::Vector2d GetMaxBound() const override;
 
-    void set_data(const cv::Mat &data);
+    void set_data(const cv::Mat& data);
 
 public:
     /// Width of the image.
