@@ -65,7 +65,6 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
         normal_estimator.compute(*cloud_normals);
         converter::pcl_to_hymson3d_normals(cloud_normals, cloud);
         LOG_INFO("Complete normal estimation");
-        // std::cout << (*cloud_normals)[0] << std::endl;
     } else {
         cloud_normals->reserve(cloud.normals_.size());
         for (auto pt : cloud.normals_) {
@@ -85,25 +84,7 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
             static_cast<hymson3d::geometry::KDTreeSearchParamRadius&>(param)
                     .radius_;
     curvature_estimator.setRadiusSearch(rad);
-    // curvature_estimator.setNumberOfThreads(10);// available in pcl 1.14.1-dev
     curvature_estimator.compute(*cloud_curvatures);
-
-    //     cloud_curvatures->resize(cloud_pcl->size());
-    // #pragma omp parallel for
-    //     for (size_t i = 0; i < cloud_pcl->size(); ++i) {
-    //         std::vector<int> indices;
-    //         std::vector<float> distances;
-    //         // 搜索邻域点
-    //         tree->radiusSearch(cloud_pcl->points[i], 0.02, indices,
-    //         distances);
-
-    //         float pcx, pcy, pcz, pc1, pc2;
-
-    //         // 计算主曲率
-    //         curvature_estimator.computePointPrincipalCurvatures(
-    //                 *cloud_normals, static_cast<int>(i), indices, pcx, pcy,
-    //                 pcz, pc1, pc2);
-    //     }
 
     cloud.curvatures_.reserve(cloud_curvatures->size());
     double min_val = std::numeric_limits<double>::max();
@@ -115,7 +96,6 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
                 ((*cloud_curvatures)[i].pc1 + (*cloud_curvatures)[i].pc2) / 2;
         curvature.gaussian_curvature =
                 (*cloud_curvatures)[i].pc1 * (*cloud_curvatures)[i].pc2;
-        //  [Wardetzky et al. 2007] total_curva = k1^2 + k2^2
         curvature.total_curvature = pow((*cloud_curvatures)[i].pc1, 2) +
                                     pow((*cloud_curvatures)[i].pc2, 2);
         if (curvature.total_curvature < min_val)
@@ -125,8 +105,6 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
         cloud.curvatures_.emplace_back(curvature);
     }
 
-    // std::cout << min_val << " " << max_val << std::endl;
-    // color pointcloud according to curvature
     cloud.colors_.reserve(cloud.points_.size());
     for (int i = 0; i < cloud.curvatures_.size(); i++) {
         cloud.colors_.emplace_back(color_with_curvature(
@@ -136,8 +114,6 @@ void ComputeCurvature_PCL(geometry::PointCloud& cloud,
     LOG_INFO("Compute curvature done");
 }
 
-// FIXME: Problem with this method!!!
-//  TODO::implement https://arxiv.org/pdf/2305.12653
 void ComputeCurvature_TNV(geometry::PointCloud& cloud,
                           geometry::KDTreeSearchParam& param) {
     if (param.GetSearchType() != geometry::KDTreeSearchParam::SearchType::Knn) {
@@ -152,12 +128,10 @@ void ComputeCurvature_TNV(geometry::PointCloud& cloud,
     total_curvatures.resize(cloud.points_.size());
     std::cout << "knn: " << knn << std::endl;
     TotalCurvaturePointCloud::TotalCurvaturePCD(cloud, total_curvatures, knn);
-    // cloud.curvatures_.resize(cloud.points_.size());
     double min_val = std::numeric_limits<double>::max();
     double max_val = std::numeric_limits<double>::min();
     for (int i = 0; i < cloud.points_.size(); i++) {
         geometry::curvature curvature;
-        // std::cout << total_curvatures[i] << std::endl;
         curvature.total_curvature = total_curvatures[i];
         cloud.curvatures_.emplace_back(curvature);
         if (total_curvatures[i] < min_val) min_val = total_curvatures[i];
@@ -165,7 +139,6 @@ void ComputeCurvature_TNV(geometry::PointCloud& cloud,
     }
     std::cout << "bbb" << min_val << " max" << max_val << std::endl;
 
-    // paint pointcloud according to total_curvature
     cloud.colors_.resize(cloud.points_.size());
     for (int i = 0; i < cloud.curvatures_.size(); i++) {
         cloud.colors_[i] = color_with_curvature(
@@ -173,7 +146,6 @@ void ComputeCurvature_TNV(geometry::PointCloud& cloud,
     }
 }
 
-// TODO::test this method and compare with pcl implementation
 void ComputeSurfaceVariation(geometry::PointCloud& cloud,
                              geometry::KDTreeSearchParam& param) {
     if (!cloud.HasCurvatures()) {
@@ -189,7 +161,6 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
         hymson3d::geometry::KDTree kdtree;
         kdtree.SetData(cloud);
 
-// use knn for testing
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < (int)points.size(); i++) {
             std::vector<int> indices;
@@ -223,15 +194,10 @@ void ComputeSurfaceVariation(geometry::PointCloud& cloud,
         solver.compute(covariances[i]);
         Eigen::VectorXd eigenvalues = solver.eigenvalues();
         std::sort(eigenvalues.begin(), eigenvalues.end());
-        // NOTE:
-        // https://pointclouds.org/documentation/group__features.html
-        // https://graphics.stanford.edu/~mapauly/Pdfs/Simplification.pdf
-        // curvature 和 surface variation 不是一个东西
         surface_variation = eigenvalues[0] /
                             (eigenvalues[0] + eigenvalues[1] + eigenvalues[2]);
         geometry::curvature writen_data;
         writen_data.total_curvature = surface_variation;
-        // fake data
         writen_data.mean_curvature = eigenvalues[0];
         writen_data.gaussian_curvature = eigenvalues[0] * eigenvalues[1];
         surface_variations[i] = writen_data;
@@ -282,8 +248,6 @@ void ComputeCurvature_PCA(geometry::PointCloud& cloud,
             k2 = res.second;
             geometry::curvature writen_data;
             writen_data.total_curvature = pow(k1, 2) + pow(k2, 2);
-
-            // fake data
             writen_data.mean_curvature = (k1 + k2) / 2.0;
             writen_data.gaussian_curvature = k1 * k2;
             cloud.curvatures_[i] = writen_data;
@@ -303,7 +267,6 @@ void ComputeCurvature_PCA(geometry::PointCloud& cloud,
     }
 }
 
-// implemtation based on pcl document
 std::pair<double, double> calculate_point_curvature(geometry::PointCloud& cloud,
                                                     Eigen::Vector3d normal,
                                                     Eigen::Vector3d pt,
@@ -313,12 +276,10 @@ std::pair<double, double> calculate_point_curvature(geometry::PointCloud& cloud,
     Eigen::Matrix<double, 9, 1> cumulants;
     cumulants.setZero();
     for (const auto& idx : indices) {
-        // project tangent point
         Eigen::Vector3d n = normal.normalized();
         double d = (cloud.points_[idx] - pt).dot(n);
         Eigen::Vector3d tangent_point = pt - d * n;
 
-        // cal covariance matrix
         cumulants(0) += tangent_point(0);
         cumulants(1) += tangent_point(1);
         cumulants(2) += tangent_point(2);
@@ -357,9 +318,7 @@ std::pair<double, double> calculate_point_curvature(geometry::PointCloud& cloud,
 Eigen::Vector3d color_with_curvature(double curvature,
                                      double min_val,
                                      double max_val) {
-    // std::cout << curvature << std::endl;
     double value = (curvature - min_val) / (max_val - min_val);
-    // value = 1 / (-log(value));
     double r = 1.0, g = 1.0, b = 1.0;
 
     if (value < 0.5) {
@@ -407,7 +366,6 @@ Eigen::SparseMatrix<double> CotangentLaplacian(const Eigen::MatrixXd& V,
         }
     }
 
-    // Add diagonal entries
     for (int i = 0; i < n; ++i) {
         triplets.push_back(Eigen::Triplet<double>(i, i, diagonalEntries(i)));
     }
@@ -420,7 +378,6 @@ Eigen::SparseMatrix<double> CotangentLaplacian(const Eigen::MatrixXd& V,
 std::vector<int> TotalCurvaturePointCloud::Where(
         int i, const Eigen::MatrixXi& inArray) {
     std::vector<int> res;
-    int idx = 0;
     for (int r = 0; r < inArray.rows(); r++) {
         for (int c = 0; c < inArray.cols(); c++) {
             if (inArray(r, c) == i) {
@@ -445,13 +402,12 @@ Eigen::MatrixXi TotalCurvaturePointCloud::DelaunayKNN(
     Eigen::MatrixXd n, A;
     Eigen::Vector3d mean_A_vec, r0, x_axis, r1, n_plane;
 
-    // projecting points from 3d to 2d, find the best fitting plane
     mean_A_vec = knn_locations_including_self.transpose().rowwise().mean();
     A = knn_locations_including_self.transpose().colwise() -
-        mean_A_vec;  // 3, 20
+        mean_A_vec;
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(
             A, Eigen::ComputeFullU | Eigen::ComputeFullV);
-    n = svd.matrixU()(Eigen::all, svd.matrixU().cols() - 1);
+    n = svd.matrixU().col(svd.matrixU().cols() - 1);
     n_plane = {n(0), n(1), n(2)};
     r0 = {knn_locations_including_self(0, 0),
           knn_locations_including_self(0, 1),
@@ -464,9 +420,8 @@ Eigen::MatrixXi TotalCurvaturePointCloud::DelaunayKNN(
     auto projected_e1 = subtracted_r0 * e1;
     auto projected_e2 = subtracted_r0 * e2;
 
-    // Delaunay triangulation to find one ring idx
     Eigen::MatrixXd knn_locations_2d(projected_e1.rows(), 2);
-    knn_locations_2d << projected_e1, projected_e2;  // 20, 2
+    knn_locations_2d << projected_e1, projected_e2;
 
     std::vector<std::pair<K::Point_3, int>> points_with_indices;
     for (size_t i = 0; i < knn_locations_2d.rows(); ++i) {
@@ -477,7 +432,6 @@ Eigen::MatrixXi TotalCurvaturePointCloud::DelaunayKNN(
 
     Delaunay dt(points_with_indices.begin(), points_with_indices.end());
 
-    // Create an Eigen matrix to store the triangles
     Eigen::MatrixXi all_triangles(dt.number_of_faces(), 3);
 
     size_t triangle_index = 0;
@@ -492,19 +446,22 @@ Eigen::MatrixXi TotalCurvaturePointCloud::DelaunayKNN(
 
     std::vector<int> adjacent_triangles_mask =
             TotalCurvaturePointCloud::Where(0, all_triangles);
-    adjacent_triangles_idx_local =
-            all_triangles(adjacent_triangles_mask, Eigen::all);  // 5, 3
-    // Converting indices back to original global indices
-    Eigen::MatrixXi adjacent_triangles_idx_x =
-            idx(Eigen::all, adjacent_triangles_idx_local(Eigen::all, 0));
-    Eigen::MatrixXi adjacent_triangles_idx_y =
-            idx(Eigen::all, adjacent_triangles_idx_local(Eigen::all, 1));
-    Eigen::MatrixXi adjacent_triangles_idx_z =
-            idx(Eigen::all, adjacent_triangles_idx_local(Eigen::all, 2));
+    
+    // 替换 Eigen::all - 提取指定行的所有列
+    adjacent_triangles_idx_local.resize(adjacent_triangles_mask.size(), all_triangles.cols());
+    for (int i = 0; i < adjacent_triangles_mask.size(); ++i) {
+        adjacent_triangles_idx_local.row(i) = all_triangles.row(adjacent_triangles_mask[i]);
+    }
+    
+    // 替换 idx(Eigen::all, ...) - idx 是 1xN 矩阵，直接用列索引
+    Eigen::MatrixXi adjacent_triangles_idx_x = idx.col(adjacent_triangles_idx_local(0, 0));
+    Eigen::MatrixXi adjacent_triangles_idx_y = idx.col(adjacent_triangles_idx_local(0, 1));
+    Eigen::MatrixXi adjacent_triangles_idx_z = idx.col(adjacent_triangles_idx_local(0, 2));
+    
     Eigen::MatrixXi adjacent_triangles_idx_tmp(3,
                                                adjacent_triangles_idx_x.cols());
-    adjacent_triangles_idx_tmp << adjacent_triangles_idx_x,
-            adjacent_triangles_idx_y, adjacent_triangles_idx_z;
+    adjacent_triangles_idx_tmp << adjacent_triangles_idx_x.transpose(),
+            adjacent_triangles_idx_y.transpose(), adjacent_triangles_idx_z.transpose();
     adjacent_triangles_idx = adjacent_triangles_idx_tmp.transpose();
     return adjacent_triangles_idx;
 }
@@ -521,26 +478,36 @@ double TotalCurvaturePointCloud::PerTriangleLaplacianTriangleFanCurvature(
     double total_curvature = 0.0, total_area = 0.0;
     int N_triangles = adjacent_triangles_idx.rows();
     for (int i = 0; i < N_triangles; i++) {
-        adjacent_triangle_idx = adjacent_triangles_idx(i, Eigen::all);
-        std::vector<int> triangle_verts = {adjacent_triangle_idx(0, 0),
-                                           adjacent_triangle_idx(0, 1),
-                                           adjacent_triangle_idx(0, 2)};
-        triangle = V(triangle_verts, Eigen::all);         // 3, 3
-        n_triangle_face = N(triangle_verts, Eigen::all);  // 3, 3
-        Eigen::MatrixXd AB_mat =
-                triangle(0, Eigen::all) - triangle(1, Eigen::all);
-        Eigen::MatrixXd AC_mat =
-                triangle(0, Eigen::all) - triangle(2, Eigen::all);
-        Eigen::Vector3d AB(AB_mat.coeff(0, 0), AB_mat.coeff(0, 1),
-                           AB_mat.coeff(0, 2));
-        Eigen::Vector3d AC(AC_mat.coeff(0, 0), AC_mat.coeff(0, 1),
-                           AC_mat.coeff(0, 2));
+        // 替换 adjacent_triangles_idx(i, Eigen::all) - 取整行
+        Eigen::Vector3i triangle_idx_row = adjacent_triangles_idx.row(i);
+        std::vector<int> triangle_verts = {triangle_idx_row(0),
+                                           triangle_idx_row(1),
+                                           triangle_idx_row(2)};
+        
+        // 替换 V(triangle_verts, Eigen::all) - 提取指定行的所有列
+        triangle.resize(triangle_verts.size(), V.cols());
+        n_triangle_face.resize(triangle_verts.size(), N.cols());
+        for (int j = 0; j < triangle_verts.size(); ++j) {
+            triangle.row(j) = V.row(triangle_verts[j]);
+            n_triangle_face.row(j) = N.row(triangle_verts[j]);
+        }
+        
+        // 替换 triangle(0, Eigen::all) - 取整行
+        Eigen::Vector3d p0 = triangle.row(0);
+        Eigen::Vector3d p1 = triangle.row(1);
+        Eigen::Vector3d p2 = triangle.row(2);
+        Eigen::Vector3d AB = p0 - p1;
+        Eigen::Vector3d AC = p0 - p2;
+        
         double triangle_area = 0.5 * sqrt((AB.cross(AC)).squaredNorm());
         f << 0, 1, 2;
         l = CotangentLaplacian(triangle, f);
-        x = n_triangle_face(Eigen::all, 0);
-        y = n_triangle_face(Eigen::all, 1);
-        z = n_triangle_face(Eigen::all, 2);
+        
+        // 替换 n_triangle_face(Eigen::all, col) - 取整列
+        x = n_triangle_face.col(0);
+        y = n_triangle_face.col(1);
+        z = n_triangle_face.col(2);
+        
         cx = (x.transpose() * l * x)(0);
         cy = (y.transpose() * l * y)(0);
         cz = (z.transpose() * l * z)(0);
@@ -558,7 +525,6 @@ void TotalCurvaturePointCloud::TotalCurvaturePCD(
         return;
     }
 
-    // Build the KDTree
     const auto& points = cloud.points_;
     hymson3d::geometry::KDTree kdtree;
     kdtree.SetData(cloud);
@@ -572,19 +538,22 @@ void TotalCurvaturePointCloud::TotalCurvaturePCD(
     }
 
 #pragma omp parallel for
-    // Curvature Estimation
     for (int i = 0; i < points.size(); i++) {
         std::vector<int> idx_vec;
         std::vector<double> distances;
         kdtree.SearchKNN(points[i], knn, idx_vec, distances);
-        Eigen::MatrixXd knn_locations_including_self = V(idx_vec, Eigen::all);
+        
+        // 替换 V(idx_vec, Eigen::all) - 提取指定行的所有列
+        Eigen::MatrixXd knn_locations_including_self(idx_vec.size(), V.cols());
+        for (int j = 0; j < idx_vec.size(); ++j) {
+            knn_locations_including_self.row(j) = V.row(idx_vec[j]);
+        }
+        
         int n_rows = idx_vec.size();
-        // Create a column vector of zeros with the same  number of rows as
-        // idx_vec
         Eigen::MatrixXi idx = Eigen::MatrixXi::Zero(1, n_rows);
 
-        for (int i = 0; i < n_rows; i++) {
-            idx(0, i) = idx_vec[i];
+        for (int j = 0; j < n_rows; j++) {
+            idx(0, j) = idx_vec[j];
         }
         Eigen::MatrixXi adjacent_triangles_idx =
                 TotalCurvaturePointCloud::DelaunayKNN(

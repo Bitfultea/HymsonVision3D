@@ -34,6 +34,12 @@ void tiff_to_pointcloud(const std::string& tiff_path,
                                                                        0.001),
                         bool remove_bottom = false);
 
+
+void tiff_to_pointcloud_img(cv::Mat tiff_image,
+                        geometry::PointCloud::Ptr pointcloud,
+                        const Eigen::Vector3d& ratio,
+                        bool remove_bottom = false);
+
 void mat_to_pointcloud(const cv::Mat& mat,
                        geometry::PointCloud::Ptr pointcloud,
                        const Eigen::Vector3d& ratio = Eigen::Vector3d(0.01,

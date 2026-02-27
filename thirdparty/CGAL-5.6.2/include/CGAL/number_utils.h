@@ -194,7 +194,7 @@ root_of( int k, Input_iterator begin, Input_iterator end ) {
 template< class Number_type >
 inline
 // select a Is_zero functor
-typename boost::mpl::if_c<
+typename std::conditional<
  ::std::is_same< typename Algebraic_structure_traits< Number_type >::Is_zero,
  Null_functor  >::value ,
   typename Real_embeddable_traits< Number_type >::Is_zero,

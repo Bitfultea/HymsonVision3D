@@ -3,7 +3,7 @@ file(GLOB_RECURSE pipe_source "*.cpp")
 # Create a shared library
 add_library(pipeline SHARED ${pipe_source})
 # Include headers in build process
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${PCL_INCLUDE_DIRS})
 
 
 if(WIN32)
@@ -11,9 +11,10 @@ if(WIN32)
     target_link_libraries(pipeline 
         utility_lib
         core_lib
-        ml3d_lib
-        nvinfer
+        #ml3d_lib
+        #nvinfer
         spdlog::spdlog_header_only
+        ${PCL_LIBRARIES}
         fmt::fmt-header-only
         # ${CUDA_LIBRARIES}
         #fmt::fmt

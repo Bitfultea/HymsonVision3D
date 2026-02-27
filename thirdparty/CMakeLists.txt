@@ -1,11 +1,12 @@
 if(WIN32)
-    set(WIN_DIR "F:/qhchen")
-    file(GLOB O3D_FILES "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/*.cpp")
-    file(GLOB C_FILES "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/*.c")
+    #set(WIN_DIR "F:/qhchen")
+    file(GLOB O3D_FILES "D:/vcCode/PointCloud/thirdparty/open3d/*.cpp")
+    file(GLOB C_FILES "D:/vcCode/PointCloud/thirdparty/open3d/*.c")
     add_library(thirdparty_lib SHARED ${O3D_FILES} ${C_FILES})
     target_include_directories(thirdparty_lib PUBLIC
-        "${WIN_DIR}/HymsonVision3D/thirdparty/open3d"
-        "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/Qhull/include"
+        "D:/vcCode/PointCloud/thirdparty/open3d"
+        "D:/vcCode/PointCloud/open3d/Qhull/include"
+        "D:/mySoftware/vcpkg/installed/x64-windows/include/eigen3"
     )
     target_compile_definitions(thirdparty_lib PRIVATE FMT_HEADER_ONLY)
     if(MSVC)
@@ -17,7 +18,8 @@ if(WIN32)
                         # fmt::fmt 
                         fmt::fmt-header-only 
                         Qhull::qhullcpp 
-                        Qhull::qhull_r)
+                        Qhull::qhull_r
+                        Eigen3::Eigen)
 elseif(UNIX)
     file(GLOB O3D_FILES "${CMAKE_CURRENT_SOURCE_DIR}/open3d/*.cpp")
     file(GLOB O3D_C_FILES "${CMAKE_CURRENT_SOURCE_DIR}/open3d/*.c")

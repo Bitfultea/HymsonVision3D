@@ -1,7 +1,12 @@
 cmake_minimum_required( VERSION 3.10 )
-# ���� Windows ƽ̨ȫ�ֽ��� fmt �ı����ڼ��
+if(WIN32)
+    add_compile_options(/wd4828)  # 禁用 C4828 警告
+endif()
+if(WIN32)
+    add_compile_options(/utf-8)  # 强制使用 UTF-8 编码
+endif()
 if (WIN32)
-  set(CMAKE_TOOLCHAIN_FILE "G:/vcpkg/scripts/buildsystems/vcpkg.cmake")
+  set(CMAKE_TOOLCHAIN_FILE "D:/mySoftware/vcpkg/scripts/buildsystems/vcpkg.cmake")
   add_compile_definitions(FMT_ENFORCE_COMPILE_CHECK=0)
 endif()
 project( HymsonVisionProject )
@@ -17,11 +22,11 @@ if(NOT WIN32)
   set(CMAKE_CUDA_ARCHITECTURES "86") # rtx 3090
   set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
 else ()
-  set(vcpkg_root_dir "G:/vcpkg/packages")
-  set(vcpkg_include_dir "G:/vcpkg/installed/x64-windows/include")
-  set(vcpkg_lib_dir "G:/vcpkg/installed/x64-windows/lib")
-  set(CMAKE_CUDA_COMPILER "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/bin/nvcc")
-  set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "G:/opencv_exe/opencv/build")
+  set(vcpkg_root_dir "D:/mySoftware/vcpkg/packages")
+  set(vcpkg_include_dir "D:/mySoftware/vcpkg/installed/x64-windows/include")
+  set(vcpkg_lib_dir "D:/mySoftware/vcpkg/installed/x64-windows/lib")
+  #set(CMAKE_CUDA_COMPILER "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/bin/nvcc")
+  set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "D:/zwbsoftwork/opencv/build")
   set(exe_path "${CMAKE_CURRENT_SOURCE_DIR}/build/exe")
 endif()
 
@@ -29,8 +34,10 @@ set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch/share/cmake/Torch")
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/CGAL-5.6.2")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libtorch")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "D:/mySoftware/opencv-4.8.1/build")
+#set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "D:/mySoftware/eigen-3.4/build")
 
 message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 
@@ -44,12 +51,12 @@ find_package(Threads REQUIRED)
 find_package(Qhull REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(CUDA REQUIRED)
-if (WIN32)
-  if (NOT TARGET CUDA::nvToolsExt)
-      add_library(CUDA::nvToolsExt INTERFACE IMPORTED)
-  endif()
-endif()
-find_package(Torch REQUIRED)
+# if (WIN32)
+#   if (NOT TARGET CUDA::nvToolsExt)
+#       add_library(CUDA::nvToolsExt INTERFACE IMPORTED)
+#   endif()
+# endif()
+#find_package(Torch REQUIRED)
 find_package(PCL REQUIRED)
 find_package(CGAL REQUIRED)
 find_package(nanoflann REQUIRED)
@@ -81,9 +88,10 @@ if(WIN32)
     ${PROJECT_SOURCE_DIR}/thirdparty
     ${PROJECT_SOURCE_DIR}/pipeline
     ${PROJECT_SOURCE_DIR}/ml
-    "G:/opencv_exe/opencv/build/include"
-    "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
-    # ${PROJECT_SOURCE_DIR}/thirdparty/CGAL-5.6.2/auxiliary/gmp/include
+    "D:/zwbsoftwork/opencv/build/include"
+    #"D:/mySoftware/vcpkg/installed/x64-windows/include/eigen3"
+ #   "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
+    ${PROJECT_SOURCE_DIR}/thirdparty/CGAL-5.6.2/auxiliary/gmp/include
   )
 elseif(UNIX)
   set(INCLUDE_DIRS
@@ -100,7 +108,7 @@ endif()
 include_directories(${INCLUDE_DIRS})
 include_directories(${gtest_SOURCE_DIR}/include )
 include_directories(${CGAL_INCLUDE_DIRS})
-include_directories(${CUDA_INCLUDE_DIRS})
+#include_directories(${CUDA_INCLUDE_DIRS})
 #include_directories("${vcpkg_root_dir}/fmt_x64-windows/include")
 #include_directories("${vcpkg_root_dir}/qhull_x64-windows/include")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/open3d")
