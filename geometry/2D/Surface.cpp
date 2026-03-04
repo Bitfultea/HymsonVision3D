@@ -156,5 +156,21 @@ Eigen::Vector6d Surface::FitQuadraticSurface(const cv::Mat& heightMap,
     return coeffs;
 }
 
+// kernel_size: odd >= 1.5 * size_of_defect
+cv::Mat Surface::FitFreeFormSurface(const cv::Mat& heightMap, int kernel_size) {
+    cv::Mat background_mat;
+
+    cv::Mat small_z;  // 1/4 of original
+    cv::resize(heightMap, small_z, cv::Size(), 0.25, 0.25, cv::INTER_NEAREST);
+
+    int small_kernel = std::max(3, (int)(kernel_size * 0.25) | 1);  // odd
+    cv::medianBlur(small_z, small_z, small_kernel);
+
+    cv::resize(small_z, background_mat, heightMap.size(), 0, 0,
+               cv::INTER_LINEAR);
+
+    return background_mat;
+}
+
 }  // namespace geometry
 }  // namespace hymson3d

@@ -2,11 +2,12 @@
 #pragma once
 
 #include <pcl/point_types.h>
-#include "fmtfallback.h"
+
 #include "2D/Image.h"
 #include "3D/PointCloud.h"
 #include "FileTool.h"
 #include "Logger.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace core {
@@ -40,6 +41,12 @@ void mat_to_pointcloud(const cv::Mat& mat,
                                                                       0.03,
                                                                       0.001),
                        bool remove_bottom = false);
+
+void pointcloud_to_mat(const geometry::PointCloud& pointcloud,
+                       cv::Mat& dst,
+                       const Eigen::Vector3d& ratio = Eigen::Vector3d(0.01,
+                                                                      0.03,
+                                                                      0.001));
 
 // convert hymson3d point cloud data to pcl point cloud
 void to_pcl_pointcloud(geometry::PointCloud& src,

@@ -29,7 +29,7 @@ void Segmentation_ML_3d::infer(const cv::Mat tiff_image,
     raw_2d_grid_image_ = tiff_image;
     cv::Mat pre_processed_image = preprocess(tiff_image);
 
-    //yolo_3d_seg_->make_pipe(true);
+    // yolo_3d_seg_->make_pipe(true);
 
     cv::Mat res;
     // cv::Size size = cv::Size{960, 960};

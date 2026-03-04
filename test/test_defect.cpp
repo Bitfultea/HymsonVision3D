@@ -138,6 +138,7 @@ int main(int argc, char** argv) {
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
     std::string file = argv[1];
+
     utility::read_ply(file, pointcloud);
 
     int z_ratio = 1;
@@ -166,6 +167,5 @@ int main(int argc, char** argv) {
     pipeline::DefectDetection::detect_smooth_surface(pointcloud, sample_step,
                                                      surface_threshold,
                                                      z_threshold, debug_mode);
-
     return 0;
 }

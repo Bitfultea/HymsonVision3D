@@ -127,7 +127,7 @@ void tiff_to_pointcloud(const std::string& tiff_path,
         std::vector<Eigen::Vector3d> new_pcd;
         for (auto pt : pcd) {
             if (pt.z() > 0 && pt.x() > 1.4) {
-            //if (pt.z() > 0) {
+                // if (pt.z() > 0) {
                 new_pcd.push_back(pt);
             }
         }
@@ -244,6 +244,52 @@ void mat_to_pointcloud(const cv::Mat& mat,
     pointcloud->height_ = mat.rows;
     LOG_DEBUG("Read from tiff file with pointcloud size: {}",
               pointcloud->points_.size());
+}
+
+void pointcloud_to_mat(const geometry::PointCloud& pointcloud,
+                       cv::Mat& dst,
+                       const Eigen::Vector3d& ratio) {
+    if (pointcloud.points_.empty()) return;
+
+    double min_x = pointcloud.points_[0].x();
+    double min_y = pointcloud.points_[0].y();
+    double max_x = min_x;
+    double max_y = min_y;
+
+#pragma omp parallel
+    {
+        double local_min_x = min_x, local_min_y = min_y;
+        double local_max_x = max_x, local_max_y = max_y;
+#pragma omp for nowait
+        for (size_t i = 0; i < pointcloud.points_.size(); ++i) {
+            const auto& p = pointcloud.points_[i];
+            if (p.x() < local_min_x) local_min_x = p.x();
+            if (p.x() > local_max_x) local_max_x = p.x();
+            if (p.y() < local_min_y) local_min_y = p.y();
+            if (p.y() > local_max_y) local_max_y = p.y();
+        }
+#pragma omp critical
+        {
+            if (local_min_x < min_x) min_x = local_min_x;
+            if (local_max_x > max_x) max_x = local_max_x;
+            if (local_min_y < min_y) min_y = local_min_y;
+            if (local_max_y > max_y) max_y = local_max_y;
+        }
+    }
+
+    int cols = (int)((max_x - min_x) / ratio.x()) + 1;
+    int rows = (int)((max_y - min_y) / ratio.y()) + 1;
+    dst = cv::Mat::zeros(rows, cols, CV_32FC1);
+
+#pragma omp parallel for
+    for (size_t i = 0; i < pointcloud.points_.size(); ++i) {
+        const auto& p = pointcloud.points_[i];
+        int u = (int)((p.x() - min_x) / ratio.x());
+        int v = (int)((p.y() - min_y) / ratio.y());
+        if (u >= 0 && u < cols && v >= 0 && v < rows) {
+            dst.at<float>(v, u) = (float)p.z();
+        }
+    }
 }
 
 void to_pcl_pointcloud(geometry::PointCloud& src,

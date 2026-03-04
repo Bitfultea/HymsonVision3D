@@ -1,3 +1,4 @@
+#include "2D/Surface.h"
 #include "3D/PointCloud.h"
 #include "Normal.h"
 #include "fmtfallback.h"
@@ -68,6 +69,11 @@ public:
             float surface_thresholdVal = 0.3,
             float detection_threshold = 0.0,
             bool debug_mode = true);
+
+    static void detect_smooth_surface(const cv::Mat& depth_mat,
+                                      int defect_size,
+                                      float detection_threshold,
+                                      bool debug_mode = true);
 
     static void detect_pinholes_nva_dll(
             std::shared_ptr<geometry::PointCloud> cloud,
