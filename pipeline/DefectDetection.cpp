@@ -416,6 +416,101 @@ void DefectDetection::detect_smooth_surface(
                            utility::FileFormat::BINARY);
     }
 }
+void DefectDetection::detect_smooth_surface_dll(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        geometry::KDTreeSearchParamRadius param,
+        float normal_degree,
+        float curvature_threshold,
+        int min_defects_size,
+        float z_threshold,
+        std::vector<geometry::PointCloud::Ptr>& res,
+        bool debug_mode) {
+    // 1.0 normal estimation
+    core::feature::ComputeNormals_PCA(*cloud, param);
+    core::feature::orient_normals_towards_positive_z(*cloud);
+
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_1.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+
+    // 2.0 region growing
+    int plane_cluster_size = cloud->points_.size() / 3;
+    core::Cluster::RegionGrowingCluster(*cloud, param.radius_, normal_degree,
+                                        curvature_threshold,
+                                        plane_cluster_size);
+
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_2.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+
+    // 3.0 extract defects
+    geometry::PointCloud::Ptr defects =
+            std::make_shared<geometry::PointCloud>();
+    for (size_t i = 0; i < cloud->points_.size(); i++) {
+        if (cloud->labels_[i] == -1) {
+            defects->points_.emplace_back(cloud->points_[i]);
+            defects->normals_.emplace_back(cloud->normals_[i]);
+        }
+    }
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_3.ply", defects,
+                           utility::FileFormat::BINARY);
+    }
+    if (defects->points_.size() == 0) {
+        LOG_INFO("No defects.");
+        return;
+    }
+
+    // 3.1 defects clusters
+    double eps = 2;
+    int min_dbscan_cluster_size = 5;
+    int num_defects = core::Cluster::DBSCANCluster(*defects, eps,
+                                                   min_dbscan_cluster_size);
+    std::vector<geometry::PointCloud::Ptr> defect_clouds(num_defects);
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_4.ply", defects,
+                           utility::FileFormat::BINARY);
+    }
+    for (auto& pcd : defect_clouds) {
+        pcd = std::make_shared<geometry::PointCloud>();
+    }
+    for (size_t i = 0; i < defects->points_.size(); i++) {
+        if (defects->labels_[i] >= 0) {
+            defect_clouds[defects->labels_[i]]->points_.emplace_back(
+                    defects->points_[i]);
+            defect_clouds[defects->labels_[i]]->normals_.emplace_back(
+                    defects->normals_[i]);
+        }
+    }
+
+    // 3.2 defects filter
+    //std::vector<geometry::PointCloud::Ptr> res;
+    for (auto cloud : defect_clouds) {
+        Eigen::Vector3d bound_size = cloud->GetExtend();
+        if (bound_size.z() > z_threshold &&
+            cloud->points_.size() >= min_defects_size)
+            res.emplace_back(cloud);
+    }
+    defects->Clear();
+    // 3.3 report
+    cloud->PaintUniformColor(Eigen::Vector3d(1.0, 1.0, 1.0));
+    LOG_INFO("Detect {} defects.", res.size());
+    for (int i = 0; i < res.size(); i++) {
+        LOG_INFO("Defect {} size is : {}", i, res[i]->points_.size());
+        std::vector<int> def_idx = GetDefectIdxs(res[i], cloud);
+        Eigen::Vector3d random_color = core::Cluster::GenerateRandomColor();
+#pragma omp parallel for
+        for (int j = 0; j < def_idx.size(); j++) {
+            cloud->colors_[def_idx[j]] = random_color;
+        }
+    }
+    if (debug_mode) {
+        utility::write_ply("final_deftec.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+}
 void DefectDetection::detect_pinholes(
         std::shared_ptr<geometry::PointCloud> cloud,
         geometry::KDTreeSearchParamRadius param,

@@ -52,6 +52,15 @@ public:
             int min_defects_size = 500,
             float z_threshold = 0.0,
             bool debug_mode = true);
+    static void detect_smooth_surface_dll(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            geometry::KDTreeSearchParamRadius param,
+            float normal_degree,
+            float curvature_threshold,
+            int min_defects_size,
+            float z_threshold,
+            std::vector<geometry::PointCloud::Ptr>& res,
+            bool debug_mode = true);
 
     static void detect_smooth_surface(
             std::shared_ptr<geometry::PointCloud> cloud,

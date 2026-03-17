@@ -25,16 +25,16 @@ int main(int argc, char **argv) {
         if (entry.is_regular_file()) {
             std::string file_path = entry.path().string();
             std::string extension = entry.path().extension().string();
-            // Ö§³Ö.tiffºÍ.tif
+            // Ö§ï¿½ï¿½.tiffï¿½ï¿½.tif
             if (extension == ".tiff" || extension == ".tif" ||
                 extension == ".TIFF" || extension == ".TIF") {
                 std::cout << "Processing: " << file_path << std::endl;
                 geometry::PointCloud::Ptr pointcloud =
                         std::make_shared<geometry::PointCloud>();
                 core::converter::tiff_to_pointcloud(
-                        file_path, pointcloud, Eigen::Vector3d(1, 1, 200),
-                        false);
-                // ¹¹ÔìplyÊä³öÎÄ¼þÃû
+                        file_path, pointcloud, Eigen::Vector3d(1, 1, 1),
+                        true);
+                // ï¿½ï¿½ï¿½ï¿½plyï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½
                 auto path = entry.path();
                 path.replace_extension(".ply");
                 std::string ply_file = path.string();
