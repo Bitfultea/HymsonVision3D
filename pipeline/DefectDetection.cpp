@@ -350,6 +350,7 @@ void DefectDetection::detect_smooth_surface(
         int sample_step,
         float surface_thresholdVal,
         float detection_threshold,
+        int defect_type,
         bool debug_mode) {
     size_t n_points = cloud->points_.size();
 
@@ -414,6 +415,52 @@ void DefectDetection::detect_smooth_surface(
 
         utility::write_ply("surface_deftec.ply", cloud,
                            utility::FileFormat::BINARY);
+    }
+
+    geometry::PointCloud::Ptr results;
+    if (defect_type == 1) {
+        // bumps
+        geometry::PointCloud::Ptr bump_cloud =
+                std::make_shared<geometry::PointCloud>();
+        bump_cloud->points_.resize(bump_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < bump_indices.size(); i++) {
+            bump_cloud->points_[i] = cloud->points_[bump_indices[i]];
+        }
+        results = bump_cloud;
+        LOG_INFO("Bump defect size is {}.", bump_cloud->points_.size());
+
+    } else if (defect_type == 2) {
+        // dents
+        geometry::PointCloud::Ptr dent_cloud =
+                std::make_shared<geometry::PointCloud>();
+        dent_cloud->points_.resize(dent_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < dent_indices.size(); i++) {
+            dent_cloud->points_[i] = cloud->points_[dent_indices[i]];
+        }
+        results = dent_cloud;
+        LOG_INFO("Dent defect size is {}.", dent_cloud->points_.size());
+
+    } else if (defect_type == 0) {
+        std::vector<Eigen::Vector3d> bump_points;
+        bump_points.resize(bump_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < bump_indices.size(); i++) {
+            bump_points[i] = cloud->points_[bump_indices[i]];
+        }
+        std::vector<Eigen::Vector3d> dent_points;
+        dent_points.resize(dent_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < dent_indices.size(); i++) {
+            dent_points[i] = cloud->points_[dent_indices[i]];
+        }
+        results = std::make_shared<geometry::PointCloud>();
+        results->points_ = bump_points;
+        results->points_.insert(results->points_.end(), dent_points.begin(),
+                                dent_points.end());
+        LOG_INFO("Bump defect size is {} and dent defect size is {}.",
+                 bump_points.size(), dent_points.size());
     }
 }
 
@@ -668,7 +715,8 @@ void DefectDetection::detect_pinholes_nva(
                             transformation_matrix.y());
             // std::cout << "idx: " << idx << std::endl;
             // std::cout << "center.y(): " << center.y() << std::endl;
-            // std::cout << "bottom: " << long_clouds[i]->points_.front().y()
+            // std::cout << "bottom: " <<
+            // long_clouds[i]->points_.front().y()
             //           << std::endl;
             double up_bound = long_clouds[i]->y_slice_peaks[idx];
             // std::cout << "center: " << center << std::endl;
@@ -784,7 +832,8 @@ void DefectDetection::detect_pinholes_nva_dll(
                             transformation_matrix.y());
             // std::cout << "idx: " << idx << std::endl;
             // std::cout << "center.y(): " << center.y() << std::endl;
-            // std::cout << "bottom: " << long_clouds[i]->points_.front().y()
+            // std::cout << "bottom: " <<
+            // long_clouds[i]->points_.front().y()
             //           << std::endl;
             double up_bound = long_clouds[i]->y_slice_peaks[idx];
             // std::cout << "center: " << center << std::endl;
@@ -893,7 +942,8 @@ void DefectDetection::detect_pinholes_nva_roi_dll(
     //// 1.3 separate r-corner and the flip-edge
     // std::vector<geometry::PointCloud::Ptr> long_clouds;
     // std::vector<geometry::PointCloud::Ptr> corners_clouds;
-    // extract_long_edge(long_clouds, corners_clouds, clusters, num_clusters);
+    // extract_long_edge(long_clouds, corners_clouds, clusters,
+    // num_clusters);
     t1 = std::chrono::high_resolution_clock::now();
     // 2.0 nva method
     std::vector<geometry::PointCloud::Ptr> defect_clouds;
@@ -950,7 +1000,8 @@ void DefectDetection::detect_pinholes_nva_roi_dll(
                           transformation_matrix.y());
             // std::cout << "idx: " << idx << std::endl;
             // std::cout << "center.y(): " << center.y() << std::endl;
-            // std::cout << "bottom: " << long_clouds[i]->points_.front().y()
+            // std::cout << "bottom: " <<
+            // long_clouds[i]->points_.front().y()
             //           << std::endl;
             double up_bound = roi_clusters[i]->y_slice_peaks[idx];
             // std::cout << "center: " << center << std::endl;
@@ -1031,8 +1082,8 @@ void DefectDetection::detect_pinholes_nva_roi_dll_fast(
     // core::feature::orient_normals_towards_positive_z(*points);
     // auto t5 = std::chrono::high_resolution_clock::now();
     //     std::chrono::duration<double, std::milli> elapsed3 = t5 - t4;
-    // std::cout << "==================orient_normals_towards_positive_z time
-    // passed:=======================" << elapsed3.count() << "ms"
+    // std::cout << "==================orient_normals_towards_positive_z
+    // time passed:=======================" << elapsed3.count() << "ms"
     //           << std::endl;
     int num_clusters = 1;
     // std::cout << "********************size of points: " <<
@@ -1043,7 +1094,8 @@ void DefectDetection::detect_pinholes_nva_roi_dll_fast(
 
     // auto t6 = std::chrono::high_resolution_clock::now();
     // std::chrono::duration<double, std::milli> elapsed4 = t6 - t4;
-    // std::cout << "==============PartSegment time passed:==================="
+    // std::cout << "==============PartSegment time
+    // passed:==================="
     // << elapsed4.count() << "ms"
     //           << std::endl;
     // for time test
@@ -1125,7 +1177,8 @@ void DefectDetection::detect_pinholes_nva_roi_dll_fast(
                             transformation_matrix.y());
             // std::cout << "idx: " << idx << std::endl;
             // std::cout << "center.y(): " << center.y() << std::endl;
-            // std::cout << "bottom: " << long_clouds[i]->points_.front().y()
+            // std::cout << "bottom: " <<
+            // long_clouds[i]->points_.front().y()
             //           << std::endl;
             double up_bound = clusters[i]->y_slice_peaks[idx];
             // std::cout << "center: " << center << std::endl;
@@ -1167,7 +1220,8 @@ void DefectDetection::detect_pinholes_nva_roi_dll_fast(
                 // total_defects[i][j]->GetMinBound();
                 // Eigen::Vector3d max_bound =
                 // total_defects[i][j]->GetMaxBound();
-                // filtered_defects_bounds.emplace_back(max_bound - min_bound);
+                // filtered_defects_bounds.emplace_back(max_bound -
+                // min_bound);
             }
         }
     }
@@ -1314,8 +1368,8 @@ std::shared_ptr<geometry::PointCloud> DefectDetection::FPFH_NVA(
 
     if (use_fpfh) {
         for (int i = 0; i < cloud->points_.size(); i++) {
-            // if (fpfh_marker[i] == 1 && (marker_x[i] == 1 || marker_y[i] ==
-            // 1)) {
+            // if (fpfh_marker[i] == 1 && (marker_x[i] == 1 || marker_y[i]
+            // == 1)) {
             if (fpfh_marker[i] == 1) {
                 cloud->colors_[i] = Eigen::Vector3d(1.0, 0.0, 0.0);
             }
@@ -1398,8 +1452,8 @@ std::shared_ptr<geometry::PointCloud> DefectDetection::FPFH_NVA_Fast(
 
     if (use_fpfh) {
         for (int i = 0; i < cloud->points_.size(); i++) {
-            // if (fpfh_marker[i] == 1 && (marker_x[i] == 1 || marker_y[i] ==
-            // 1)) {
+            // if (fpfh_marker[i] == 1 && (marker_x[i] == 1 || marker_y[i]
+            // == 1)) {
             if (fpfh_marker[i] == 1) {
                 cloud->colors_[i] = Eigen::Vector3d(1.0, 0.0, 0.0);
             }
@@ -1798,7 +1852,8 @@ void DefectDetection::slice_along_y(
             Eigen::Vector3d max_bound = long_clouds[i]->GetMaxBound();
             // int num_slice =
             //         (int)((max_bound.y() / transformation_matrix.y()) -
-            //               (min_bound.y()) / transformation_matrix.y() + 1);
+            //               (min_bound.y()) / transformation_matrix.y() +
+            //               1);
             int num_slice = static_cast<int>((max_bound.y() - min_bound.y()) /
                                                      transformation_matrix.y() +
                                              0.5) +

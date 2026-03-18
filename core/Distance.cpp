@@ -67,6 +67,11 @@ double cloud_to_cloud_distance(
     return 0.0;
 }
 
+double point_to_point_distance(const Eigen::Vector3d& point,
+                               const Eigen::Vector3d& point_target) {
+    return (point - point_target).norm();
+}
+
 }  // namespace feature
 }  // namespace core
 }  // namespace hymson3d

@@ -141,12 +141,13 @@ int main(int argc, char** argv) {
 
     utility::read_ply(file, pointcloud);
 
-    int z_ratio = 1;
-    float normal_degree = 2.0;
+    float z_ratio = 0.01;
+    float normal_degree = 1.0;
     float curvature_threshold = 5;
     int min_defects_size = 500;
-    float z_threshold = 7.0;
+    float z_threshold = 10.0;
     float radius = 2.0;
+    int defect_type = 0;  // 0: both; 1: bump; 2: dent
     bool debug_mode = true;
     std::cout << "z_ratio:" << z_ratio << std::endl;
     std::cout << "normal_degree:" << normal_degree << std::endl;
@@ -164,8 +165,8 @@ int main(int argc, char** argv) {
     int sample_step = 1;
     float surface_threshold = 1.5;
     z_threshold = 3.0;
-    pipeline::DefectDetection::detect_smooth_surface(pointcloud, sample_step,
-                                                     surface_threshold,
-                                                     z_threshold, debug_mode);
+    pipeline::DefectDetection::detect_smooth_surface(
+            pointcloud, sample_step, surface_threshold, z_threshold,
+            defect_type, debug_mode);
     return 0;
 }

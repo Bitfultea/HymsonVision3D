@@ -20,6 +20,9 @@ double cloud_to_cloud_distance(const geometry::PointCloud& cloud,
 double cloud_to_cloud_distance(
         const std::vector<Eigen::Vector3d>& points,
         const std::vector<Eigen::Vector3d>& points_target);
+
+double point_to_point_distance(const Eigen::Vector3d& point,
+                               const Eigen::Vector3d& point_target);
 }  // namespace feature
 }  // namespace core
 }  // namespace hymson3d

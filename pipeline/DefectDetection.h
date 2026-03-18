@@ -68,6 +68,7 @@ public:
             int sample_step = 1,
             float surface_thresholdVal = 0.3,
             float detection_threshold = 0.0,
+            int defect_type = 0,  // 0:both, 1:bump, 2: dent
             bool debug_mode = true);
 
     static void detect_smooth_surface(const cv::Mat& depth_mat,
