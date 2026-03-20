@@ -261,7 +261,11 @@ void pointcloud_to_mat(const geometry::PointCloud& pointcloud,
         double local_min_x = min_x, local_min_y = min_y;
         double local_max_x = max_x, local_max_y = max_y;
 #pragma omp for nowait
-        for (size_t i = 0; i < pointcloud.points_.size(); ++i) {
+#ifdef _WIN32
+    for (int i = 0; i < static_cast<int>(pointcloud.points_.size()); ++i) {
+#else
+    for (size_t i = 0; i < pointcloud.points_.size(); ++i) {
+#endif
             const auto& p = pointcloud.points_[i];
             if (p.x() < local_min_x) local_min_x = p.x();
             if (p.x() > local_max_x) local_max_x = p.x();
@@ -282,7 +286,11 @@ void pointcloud_to_mat(const geometry::PointCloud& pointcloud,
     dst = cv::Mat::zeros(rows, cols, CV_32FC1);
 
 #pragma omp parallel for
+#ifdef _WIN32
+    for (int i = 0; i < static_cast<int>(pointcloud.points_.size()); ++i) {
+#else
     for (size_t i = 0; i < pointcloud.points_.size(); ++i) {
+#endif
         const auto& p = pointcloud.points_[i];
         int u = (int)((p.x() - min_x) / ratio.x());
         int v = (int)((p.y() - min_y) / ratio.y());

@@ -71,6 +71,15 @@ public:
             int defect_type = 0,  // 0:both, 1:bump, 2: dent
             bool debug_mode = true);
 
+    static void detect_smooth_surface_dll(
+                std::shared_ptr<geometry::PointCloud> cloud,
+                int sample_step,
+                float surface_thresholdVal,
+                float detection_threshold,
+                int defect_type,
+                std::vector<geometry::PointCloud::Ptr>& res,
+                bool debug_mode);
+                
     static void detect_smooth_surface(const cv::Mat& depth_mat,
                                       int defect_size,
                                       float detection_threshold,

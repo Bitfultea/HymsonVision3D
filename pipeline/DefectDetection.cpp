@@ -345,6 +345,102 @@ void DefectDetection::detect_smooth_surface(
     }
 }
 
+void DefectDetection::detect_smooth_surface_dll(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        geometry::KDTreeSearchParamRadius param,
+        float normal_degree,
+        float curvature_threshold,
+        int min_defects_size,
+        float z_threshold,
+        std::vector<geometry::PointCloud::Ptr>& res,
+        bool debug_mode) {
+    // 1.0 normal estimation
+    core::feature::ComputeNormals_PCA(*cloud, param);
+    core::feature::orient_normals_towards_positive_z(*cloud);
+
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_1.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+
+    // 2.0 region growing
+    int plane_cluster_size = cloud->points_.size() / 3;
+    core::Cluster::RegionGrowingCluster(*cloud, param.radius_, normal_degree,
+                                        curvature_threshold,
+                                        plane_cluster_size);
+
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_2.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+
+    // 3.0 extract defects
+    geometry::PointCloud::Ptr defects =
+            std::make_shared<geometry::PointCloud>();
+    for (size_t i = 0; i < cloud->points_.size(); i++) {
+        if (cloud->labels_[i] == -1) {
+            defects->points_.emplace_back(cloud->points_[i]);
+            defects->normals_.emplace_back(cloud->normals_[i]);
+        }
+    }
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_3.ply", defects,
+                           utility::FileFormat::BINARY);
+    }
+    if (defects->points_.size() == 0) {
+        LOG_INFO("No defects.");
+        return;
+    }
+
+    // 3.1 defects clusters
+    double eps = 2;
+    int min_dbscan_cluster_size = 5;
+    int num_defects = core::Cluster::DBSCANCluster(*defects, eps,
+                                                   min_dbscan_cluster_size);
+    std::vector<geometry::PointCloud::Ptr> defect_clouds(num_defects);
+    if (debug_mode) {
+        utility::write_ply("plane_curvature_4.ply", defects,
+                           utility::FileFormat::BINARY);
+    }
+    for (auto& pcd : defect_clouds) {
+        pcd = std::make_shared<geometry::PointCloud>();
+    }
+    for (size_t i = 0; i < defects->points_.size(); i++) {
+        if (defects->labels_[i] >= 0) {
+            defect_clouds[defects->labels_[i]]->points_.emplace_back(
+                    defects->points_[i]);
+            defect_clouds[defects->labels_[i]]->normals_.emplace_back(
+                    defects->normals_[i]);
+        }
+    }
+
+    // 3.2 defects filter
+    //std::vector<geometry::PointCloud::Ptr> res;
+    for (auto cloud : defect_clouds) {
+        Eigen::Vector3d bound_size = cloud->GetExtend();
+        if (bound_size.z() > z_threshold &&
+            cloud->points_.size() >= min_defects_size)
+            res.emplace_back(cloud);
+    }
+    defects->Clear();
+    // 3.3 report
+    cloud->PaintUniformColor(Eigen::Vector3d(1.0, 1.0, 1.0));
+    LOG_INFO("Detect {} defects.", res.size());
+    for (int i = 0; i < res.size(); i++) {
+        LOG_INFO("Defect {} size is : {}", i, res[i]->points_.size());
+        std::vector<int> def_idx = GetDefectIdxs(res[i], cloud);
+        Eigen::Vector3d random_color = core::Cluster::GenerateRandomColor();
+#pragma omp parallel for
+        for (int j = 0; j < def_idx.size(); j++) {
+            cloud->colors_[def_idx[j]] = random_color;
+        }
+    }
+    if (debug_mode) {
+        utility::write_ply("final_deftec.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+}
+
 void DefectDetection::detect_smooth_surface(
         std::shared_ptr<geometry::PointCloud> cloud,
         int sample_step,
@@ -461,6 +557,150 @@ void DefectDetection::detect_smooth_surface(
                                 dent_points.end());
         LOG_INFO("Bump defect size is {} and dent defect size is {}.",
                  bump_points.size(), dent_points.size());
+    }
+}
+
+void DefectDetection::detect_smooth_surface_dll(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        int sample_step,
+        float surface_thresholdVal,
+        float detection_threshold,
+        int defect_type,
+        std::vector<geometry::PointCloud::Ptr>& res,
+        bool debug_mode) {
+    size_t n_points = cloud->points_.size();
+
+    // for surface generation
+    int iterations = 2;
+
+    // defect indexes
+    std::vector<int> bump_indices;
+    std::vector<int> dent_indices;
+
+    core::PlaneDetection surface_detector;
+    Eigen::VectorXd surface_coeffs = surface_detector.fit_a_quadratic_surface(
+            cloud->points_, surface_thresholdVal, sample_step, iterations);
+
+    std::vector<int> local_bumps, local_dents;
+#pragma omp parallel private(local_bumps, local_dents)
+    {
+#pragma omp for nowait
+        for (int i = 0; i < (int)n_points; ++i) {
+            const auto& p = cloud->points_[i];
+            double z_ref = surface_coeffs[0] * p.x() * p.x() +
+                           surface_coeffs[1] * p.y() * p.y() +
+                           surface_coeffs[2] * p.x() * p.y() +
+                           surface_coeffs[3] * p.x() +
+                           surface_coeffs[4] * p.y() + surface_coeffs[5];
+
+            double diff = p.z() - z_ref;
+
+            if (diff > detection_threshold) {
+                local_bumps.push_back(i);
+            } else if (diff < -detection_threshold) {
+                local_dents.push_back(i);
+            }
+        }
+#pragma omp critical
+        {
+            bump_indices.insert(bump_indices.end(), local_bumps.begin(),
+                                local_bumps.end());
+            dent_indices.insert(dent_indices.end(), local_dents.begin(),
+                                local_dents.end());
+        }
+    }
+
+    LOG_DEBUG("Detect {} bumps and {} dents.", bump_indices.size(),
+              dent_indices.size());
+
+    if (debug_mode) {
+        Eigen::Vector3d bump_color{1.0, 0.0, 0.0};
+        Eigen::Vector3d dent_color{0.0, 0.0, 1.0};
+        cloud->PaintUniformColor(Eigen::Vector3d(1.0, 1.0, 1.0));
+
+#pragma omp parallel for
+        for (int i = 0; i < bump_indices.size(); i++) {
+            // std::cout << "Bump " << i << ": " << bump_indices[i] <<
+            // std::endl;
+            cloud->colors_[bump_indices[i]] = bump_color;
+        }
+#pragma omp parallel for
+        for (int i = 0; i < dent_indices.size(); i++) {
+            cloud->colors_[dent_indices[i]] = dent_color;
+        }
+
+        utility::write_ply("surface_deftec.ply", cloud,
+                           utility::FileFormat::BINARY);
+    }
+
+    geometry::PointCloud::Ptr results;
+    if (defect_type == 1) {
+        // bumps
+        geometry::PointCloud::Ptr bump_cloud =
+                std::make_shared<geometry::PointCloud>();
+        bump_cloud->points_.resize(bump_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < bump_indices.size(); i++) {
+            bump_cloud->points_[i] = cloud->points_[bump_indices[i]];
+        }
+        results = bump_cloud;
+        LOG_INFO("Bump defect size is {}.", bump_cloud->points_.size());
+
+    } else if (defect_type == 2) {
+        // dents
+        geometry::PointCloud::Ptr dent_cloud =
+                std::make_shared<geometry::PointCloud>();
+        dent_cloud->points_.resize(dent_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < dent_indices.size(); i++) {
+            dent_cloud->points_[i] = cloud->points_[dent_indices[i]];
+        }
+        results = dent_cloud;
+        LOG_INFO("Dent defect size is {}.", dent_cloud->points_.size());
+
+    } else if (defect_type == 0) {
+        std::vector<Eigen::Vector3d> bump_points;
+        bump_points.resize(bump_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < bump_indices.size(); i++) {
+            bump_points[i] = cloud->points_[bump_indices[i]];
+        }
+        std::vector<Eigen::Vector3d> dent_points;
+        dent_points.resize(dent_indices.size());
+#pragma omp parallel for
+        for (int i = 0; i < dent_indices.size(); i++) {
+            dent_points[i] = cloud->points_[dent_indices[i]];
+        }
+        results = std::make_shared<geometry::PointCloud>();
+        results->points_ = bump_points;
+        results->points_.insert(results->points_.end(), dent_points.begin(),
+                                dent_points.end());
+        LOG_INFO("Bump defect size is {} and dent defect size is {}.",
+                 bump_points.size(), dent_points.size());
+    }
+    if (results->points_.size() == 0) {
+        LOG_INFO("No DBSCANCluster due to no data.");
+        return;
+    }
+    // defects clusters
+    double eps = 2;
+    int min_dbscan_cluster_size = 5;
+    int num_defects = core::Cluster::DBSCANCluster(*results, eps,
+                                                    min_dbscan_cluster_size);
+/*       std::vector<geometry::PointCloud::Ptr> defect_clouds(num_defects);*/
+    res.resize(num_defects);
+    for (auto& pcd : res) {
+        pcd = std::make_shared<geometry::PointCloud>();
+    }
+    if (debug_mode) {
+        utility::write_ply("plane_results_cluster.ply", results,
+                            utility::FileFormat::BINARY);
+    }
+    for (size_t i = 0; i < results->points_.size(); i++) {
+        if (results->labels_[i] >= 0) {
+            res[results->labels_[i]]->points_.emplace_back(
+                    results->points_[i]);
+        }
     }
 }
 
