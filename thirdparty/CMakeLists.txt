@@ -1,5 +1,5 @@
 if(WIN32)
-    set(WIN_DIR "F:/qhchen")
+    set(WIN_DIR "D:/qhchen")
     file(GLOB O3D_FILES "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/*.cpp")
     file(GLOB C_FILES "${WIN_DIR}/HymsonVision3D/thirdparty/open3d/*.c")
     add_library(thirdparty_lib SHARED ${O3D_FILES} ${C_FILES})

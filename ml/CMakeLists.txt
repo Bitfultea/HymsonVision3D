@@ -12,7 +12,7 @@ target_include_directories(ml3d_lib PUBLIC
 )
 
 if(WIN32)
-    set(TENSORRT_ROOT "G:/Tensorrt/TensorRT-8.6.1.6")
+    set(TENSORRT_ROOT "E:/Tensorrt/TensorRT-8.6.1.6")
     set(TENSORRT_INCLUDE_DIR "${TENSORRT_ROOT}/include")
     set(TENSORRT_LIBRARY_DIR "${TENSORRT_ROOT}/lib")
     target_include_directories(ml3d_lib PUBLIC

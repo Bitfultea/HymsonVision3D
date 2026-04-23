@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
 
     utility::read_ply(file, pointcloud);
 
-    float z_ratio = 0.01;
+    float z_ratio = 1;
     float normal_degree = 1.0;
     float curvature_threshold = 5;
     int min_defects_size = 500;
@@ -165,8 +165,12 @@ int main(int argc, char** argv) {
     int sample_step = 1;
     float surface_threshold = 1.5;
     z_threshold = 3.0;
-    pipeline::DefectDetection::detect_smooth_surface(
+    std::vector<geometry::PointCloud::Ptr> filtered_defects;
+    pipeline::DefectDetection::detect_smooth_surface_dll(
             pointcloud, sample_step, surface_threshold, z_threshold,
-            defect_type, debug_mode);
+            defect_type, filtered_defects, debug_mode);
+    //pipeline::DefectDetection::detect_smooth_surface(
+    //        pointcloud, sample_step, surface_threshold, z_threshold,
+    //        defect_type, debug_mode);
     return 0;
 }

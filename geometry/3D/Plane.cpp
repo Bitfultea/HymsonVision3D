@@ -31,7 +31,8 @@ void Plane::orient_normals_towards_positive_z() {
     }
     if (normal_.dot(z_reference) < 0.0) {
         normal_ *= -1.0;  // flip the normal
-        coeff_[3] *= -1.0; //filp D
+        // coeff_[3] *= -1.0; //filp D
+        coeff_ *= -1.0; //filp D
     }
 }
 

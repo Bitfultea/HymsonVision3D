@@ -1,7 +1,7 @@
 cmake_minimum_required( VERSION 3.10 )
 # ���� Windows ƽ̨ȫ�ֽ��� fmt �ı����ڼ��
 if (WIN32)
-  set(CMAKE_TOOLCHAIN_FILE "G:/vcpkg/scripts/buildsystems/vcpkg.cmake")
+  set(CMAKE_TOOLCHAIN_FILE "E:/vcpkg/scripts/buildsystems/vcpkg.cmake")
   add_compile_definitions(FMT_ENFORCE_COMPILE_CHECK=0)
 endif()
 project( HymsonVisionProject )
@@ -17,11 +17,14 @@ if(NOT WIN32)
   set(CMAKE_CUDA_ARCHITECTURES "86") # rtx 3090
   set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
 else ()
-  set(vcpkg_root_dir "G:/vcpkg/packages")
-  set(vcpkg_include_dir "G:/vcpkg/installed/x64-windows/include")
-  set(vcpkg_lib_dir "G:/vcpkg/installed/x64-windows/lib")
+  # Python 设置
+  set(PYTHON_EXECUTABLE "F:/HymsonSoftWare/MiniForge/python.exe")
+  set(Python_ROOT_DIR "F:/HymsonSoftWare/MiniForge")
+  set(vcpkg_root_dir "E:/vcpkg/packages")
+  set(vcpkg_include_dir "E:/vcpkg/installed/x64-windows/include")
+  set(vcpkg_lib_dir "E:/vcpkg/installed/x64-windows/lib")
   set(CMAKE_CUDA_COMPILER "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/bin/nvcc")
-  set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "G:/opencv_exe/opencv/build")
+  set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "E:/opencv_exe/opencv/build")
   set(exe_path "${CMAKE_CURRENT_SOURCE_DIR}/build/exe")
 endif()
 
@@ -81,7 +84,7 @@ if(WIN32)
     ${PROJECT_SOURCE_DIR}/thirdparty
     ${PROJECT_SOURCE_DIR}/pipeline
     ${PROJECT_SOURCE_DIR}/ml
-    "G:/opencv_exe/opencv/build/include"
+    "E:/opencv_exe/opencv/build/include"
     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
     # ${PROJECT_SOURCE_DIR}/thirdparty/CGAL-5.6.2/auxiliary/gmp/include
   )
