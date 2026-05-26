@@ -25,7 +25,7 @@ public:
                                 std::vector<std::vector<double>>& temp_res,
                                 std::string& debug_path,
                                 bool debug_mode);
-    static void detect_gap_step_dll_plot2(
+    static bool detect_gap_step_dll_plot2(
             std::shared_ptr<geometry::PointCloud> cloud,
             Eigen::Vector3d transformation_matrix,
             double& gap_step,
@@ -66,6 +66,17 @@ public:
                                    bool LHT);
 
 private:
+    static void detect_gap_step_dll_plot2_impl(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            Eigen::Vector3d transformation_matrix,
+            double& gap_step,
+            double& step_width,
+            double& height_threshold,
+            std::vector<std::vector<double>>& temp_res,
+            std::string& debug_path,
+            bool LHT,
+            bool debug_mode);
+
     static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative(
             std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<std::vector<Eigen::Vector2d>> group_by_derivative_dll(

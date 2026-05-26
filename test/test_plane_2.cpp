@@ -38,8 +38,10 @@ int main(int argc, char** argv) {
     cv::Mat pre_processed = raster.project_to_feature_frame(tiff_image);
     //     std::pair<bool, cv::Point2f> disk_centre =
     //             core::feature::detect_green_ring(pre_processed, debug_mode);
-    std::pair<bool, cv::Point2f> disk_centre = core::feature::detect_deep_ring(
-            *pointcloud, 10.0, 50000, debug_mode);
+    //std::pair<bool, cv::Point2f> disk_centre = core::feature::detect_deep_ring(
+    //        *pointcloud, 10.0, 50000, debug_mode);
+    std::pair<bool, cv::Point2f> disk_centre = {true, cv::Point2f(354, 304)};
+
 
     if (detect_mode == 2) {
         float radius = 5.0f;

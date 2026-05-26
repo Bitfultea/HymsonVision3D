@@ -1,6 +1,7 @@
 #include "GapStepDetection.h"
 
 #include <math.h>
+#include <cmath>
 
 #include <opencv2/opencv.hpp>
 
@@ -103,7 +104,39 @@ void GapStepDetection::detect_gap_step_dll_plot(
     calculate_gap_step_dll_plot(corners, LHT_width, gap_step, step_width, temp_res, LHT);
     // std::cout << "4" << std::endl;
 }
-void GapStepDetection::detect_gap_step_dll_plot2(
+bool GapStepDetection::detect_gap_step_dll_plot2(
+        std::shared_ptr<geometry::PointCloud> cloud,
+        Eigen::Vector3d transformation_matrix,
+        double& gap_step,
+        double& step_width,
+        double& height_threshold,
+        std::vector<std::vector<double>>& temp_res,
+        std::string& debug_path,
+        bool LHT,
+        bool debug_mode) {
+    if (!cloud || cloud->points_.empty()) {
+        LOG_ERROR("detect_gap_step_dll_plot2: input cloud is empty");
+        gap_step = -1.0;
+        step_width = -1.0;
+        return false;
+    }
+
+    gap_step = -1.0;
+    step_width = -1.0;
+
+    try {
+        detect_gap_step_dll_plot2_impl(cloud, transformation_matrix,
+                                       gap_step, step_width, height_threshold,
+                                       temp_res, debug_path, LHT, debug_mode);
+        return true;
+    } catch (...) {
+        LOG_ERROR("detect_gap_step_dll_plot2: caught a crash, "
+                  "returning error values");
+        return false;
+    }
+}
+
+void GapStepDetection::detect_gap_step_dll_plot2_impl(
         std::shared_ptr<geometry::PointCloud> cloud,
         Eigen::Vector3d transformation_matrix,
         double& gap_step,
@@ -116,29 +149,20 @@ void GapStepDetection::detect_gap_step_dll_plot2(
     // debug mode
     if (debug_mode) {
         utility::filesystem::MakeDirectory_dll(
-                debug_path);  //"C:\\Users\\Administrator\\Desktop\\res\\bspline"
+                debug_path);
     }
-    // std::cout << "1" << std::endl;
 
-    // LOG_DEBUG("Slice along Y-axis");
-    //  slice along y axis
+    // slice along y axis
     slice_along_y(cloud, transformation_matrix);
-    // std::cout << "2" << std::endl;
 
     // bspline interpolation
-    // double height_threshold = 0.01;
     std::vector<double> LHT_width;
     lineSegments corners;
-    // bspline_interpolation(cloud, height_threshold, corners, debug_mode);
-    // std::cout << "3" << std::endl;
     bspline_interpolation_dll2(cloud, height_threshold, corners, LHT_width, debug_path, LHT, debug_mode);
-    // std::cout << "3" << std::endl;
 
     // calculate the gap step result
-    // double gap_step = 0.0, step_width = 0.0;
     calculate_gap_step_dll_plot(corners, LHT_width, gap_step, step_width,
                                 temp_res, LHT);
-    // std::cout << "4" << std::endl;
 }
 
 void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
@@ -321,6 +345,17 @@ void GapStepDetection::bspline_interpolation_dll2(
         std::vector<std::vector<Eigen::Vector2d>> groups =
                 group_by_derivative_dll(resampled_pts);
 
+        // Guard: mark this slice as invalid if either group is empty (cannot cluster)
+        if (groups.size() < 2 || groups[0].empty() || groups[1].empty()) {
+            LHT_width[i] = std::numeric_limits<double>::quiet_NaN();
+            corners[i] = std::make_pair(
+                    Eigen::Vector2d(std::numeric_limits<double>::quiet_NaN(),
+                                    std::numeric_limits<double>::quiet_NaN()),
+                    Eigen::Vector2d(std::numeric_limits<double>::quiet_NaN(),
+                                    std::numeric_limits<double>::quiet_NaN()));
+            continue;
+        }
+
         std::vector<std::vector<Eigen::Vector2d>> filter_groups =
                 statistics_filter(groups, limit_pts);
         double left_height_threshold = height_threshold, right_height_threshold = height_threshold;
@@ -340,7 +375,9 @@ void GapStepDetection::bspline_interpolation_dll2(
             LHT_width[i] = -255.0;
         }
         // put two corners corresponding to the slice to container
-        corners[i] = std::make_pair(intersections[2][0], intersections[2][1]);
+        if (intersections.size() > 2) {
+            corners[i] = std::make_pair(intersections[2][0], intersections[2][1]);
+        }
 
         if (debug_mode) {
             if (LHT) {
@@ -422,6 +459,11 @@ GapStepDetection::group_by_derivative_dll(
             horiz_pts.emplace_back(sampled_pts[i]);
         }
     }
+    // Guard: need at least 2 points for kmeans with K=2
+    if (horiz_pts.size() < 2) {
+        return std::vector<std::vector<Eigen::Vector2d>>(2);
+    }
+
     // apply k-mean
     cv::Mat data(horiz_pts.size(), 2, CV_32F);
     for (int i = 0; i < horiz_pts.size(); ++i) {
@@ -467,6 +509,8 @@ GapStepDetection::group_by_derivative_dll(
         horiz_pts = clusters[0];
         clusters.clear();
         clusters.resize(2);
+        // Guard: need at least 2 points for kmeans
+        if (horiz_pts.size() < 2) break;
         // apply k-mean
         cv::Mat data(horiz_pts.size(), 2, CV_32F);
         for (int i = 0; i < horiz_pts.size(); ++i) {
@@ -512,6 +556,8 @@ GapStepDetection::group_by_derivative_dll(
         horiz_pts = clusters[1];
         clusters.clear();
         clusters.resize(2);
+        // Guard: need at least 2 points for kmeans
+        if (horiz_pts.size() < 2) break;
         // apply k-mean
         cv::Mat data(horiz_pts.size(), 2, CV_32F);
         for (int i = 0; i < horiz_pts.size(); ++i) {
@@ -627,6 +673,10 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::statistics_filter(
         std::vector<Eigen::Vector2d>& limit_pts) {
     std::vector<std::vector<Eigen::Vector2d>> filter_group_pts;
     for (int i = 0; i < clusters.size(); i++) {
+        if (clusters[i].empty()) {
+            filter_group_pts.push_back({});
+            continue;
+        }
         Eigen::Vector2d mean(0, 0);
         mean = std::accumulate(clusters[i].begin(), clusters[i].end(),
                                Eigen::Vector2d(0, 0));
@@ -655,6 +705,7 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::statistics_filter(
     std::vector<Eigen::Vector2d> temp_pts;
 
     for (int i = 0; i < 2 && i < filter_group_pts.size(); ++i) {
+        if (filter_group_pts[i].empty()) continue;
         auto [min_it, max_it] = std::minmax_element(
                 filter_group_pts[i].begin(), filter_group_pts[i].end(),
                 [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
@@ -664,12 +715,14 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::statistics_filter(
         temp_pts.push_back(*min_it);  // 左边界点
         temp_pts.push_back(*max_it);  // 右边界点
     }
-    if (temp_pts[1].x() > temp_pts[2].x()) {
-        limit_pts.push_back(temp_pts[3]);
-        limit_pts.push_back(temp_pts[0]);
-    } else {
-        limit_pts.push_back(temp_pts[1]);
-        limit_pts.push_back(temp_pts[2]);
+    if (temp_pts.size() >= 4) {
+        if (temp_pts[1].x() > temp_pts[2].x()) {
+            limit_pts.push_back(temp_pts[3]);
+            limit_pts.push_back(temp_pts[0]);
+        } else {
+            limit_pts.push_back(temp_pts[1]);
+            limit_pts.push_back(temp_pts[2]);
+        }
     }
     return filter_group_pts;
 }
@@ -1259,6 +1312,7 @@ GapStepDetection::lineSegments GapStepDetection::line_segment(
         std::vector<std::vector<Eigen::Vector2d>>& pt_groups) {
     std::vector<std::pair<Eigen::Vector2d, Eigen::Vector2d>> res;
     for (int i = 0; i < pt_groups.size(); i++) {
+        if (pt_groups[i].empty()) continue;
         double left_x = std::numeric_limits<double>::max();
         double right_x = 0;
         double mean_z = 0;
@@ -1271,7 +1325,8 @@ GapStepDetection::lineSegments GapStepDetection::line_segment(
         res.push_back(std::make_pair(Eigen::Vector2d(left_x, mean_z),
                                      Eigen::Vector2d(right_x, mean_z)));
     }
-    if (res[0].second.x() > res[1].first.x()) std::swap(res[1], res[0]);
+    if (res.size() >= 2 && res[0].second.x() > res[1].first.x())
+        std::swap(res[1], res[0]);
     return res;
 }
 // fix width calculate error
@@ -1412,7 +1467,7 @@ void GapStepDetection::compute_step_width(
     intersections.emplace_back(edge_pts);
 }
 void GapStepDetection::compute_step_width_dll(
-        std::vector<Eigen::Vector2d>& cloud_pts, 
+        std::vector<Eigen::Vector2d>& cloud_pts,
         std::vector<Eigen::Vector2d>& resampled_pts,
         lineSegments& line_segs,
         std::vector<std::vector<Eigen::Vector2d>>& intersections,
@@ -1420,9 +1475,12 @@ void GapStepDetection::compute_step_width_dll(
         double& left_height_threshold,
         double& right_height_threshold,
         //Eigen::Vector2d& max_derivative_point,
-        std::vector<Eigen::Vector2d>& limit_pts, 
+        std::vector<Eigen::Vector2d>& limit_pts,
         bool LHT ) {
+    // Guard: need at least 2 line segments to compute step width
+    if (line_segs.size() < 2 || resampled_pts.empty()) return;
     if (LHT) {
+        if (cloud_pts.size() < 2) return;
         //记录左右端点，用于计算台阶高度
         std::pair<Eigen::Vector2d, Eigen::Vector2d> left_line = line_segs[0];
         std::pair<Eigen::Vector2d, Eigen::Vector2d> right_line = line_segs[1];
@@ -1451,6 +1509,7 @@ void GapStepDetection::compute_step_width_dll(
             //oversampled_pts.emplace_back(pt);
         }
     } else {
+        if (limit_pts.size() < 2) return;
         std::pair<Eigen::Vector2d, Eigen::Vector2d> left_line = line_segs[0];
         std::pair<Eigen::Vector2d, Eigen::Vector2d> right_line = line_segs[1];
         double left_height = left_line.first.y() - left_height_threshold;
@@ -1582,15 +1641,24 @@ void GapStepDetection::calculate_gap_step(lineSegments& corners,
 void GapStepDetection::calculate_gap_step_dll_plot(lineSegments& corners,
                                           std::vector<double>& LHT_width,
                                           double& gap_step,
-                                          double& step_width, 
+                                          double& step_width,
                                           std::vector<std::vector<double>>& temp_res,
                                           bool LHT) {
+    if (corners.empty()) {
+        gap_step = -1.0;
+        step_width = -1.0;
+        return;
+    }
     if (LHT) {
         double sum_width = 0.0;
         double sum_height = 0.0;
         int exception_count = 0;
         for (int i = 0; i < corners.size(); i++) {
             double temp_x = LHT_width[i];
+            if (std::isnan(temp_x) || std::isnan(corners[i].first.y())) {
+                exception_count++;
+                continue;
+            }
             if (temp_x == -255.0) {
                 exception_count++;
                 continue;
@@ -1607,8 +1675,13 @@ void GapStepDetection::calculate_gap_step_dll_plot(lineSegments& corners,
             sum_width += temp_x;
             sum_height += temp_y;
         }
-        gap_step = sum_height / (corners.size() - exception_count);
-        step_width = sum_width / (corners.size() - exception_count);
+        if (corners.size() > exception_count) {
+            gap_step = sum_height / (corners.size() - exception_count);
+            step_width = sum_width / (corners.size() - exception_count);
+        } else {
+            gap_step = -1.0;
+            step_width = -1.0;
+        }
         LOG_INFO("gap step: {} step width: {}", gap_step, step_width);
 
     } else {
@@ -1617,6 +1690,10 @@ void GapStepDetection::calculate_gap_step_dll_plot(lineSegments& corners,
         double sum_height = 0.0;
         int exception_count = 0;
         for (int i = 0; i < corners.size(); i++) {
+            if (std::isnan(corners[i].first.x())) {
+                exception_count++;
+                continue;
+            }
             double temp_x = abs(corners[i].second.x() - corners[i].first.x());
             double temp_y = abs(corners[i].second.y() - corners[i].first.y());
             // exception
@@ -1635,8 +1712,13 @@ void GapStepDetection::calculate_gap_step_dll_plot(lineSegments& corners,
         }
         // LOG_INFO("exception count: {}, valid corners: {}", exception_count,
         //          corners.size() - exception_count);
-        gap_step = sum_height / (corners.size() - exception_count);
-        step_width = sum_width / (corners.size() - exception_count);
+        if (corners.size() > exception_count) {
+            gap_step = sum_height / (corners.size() - exception_count);
+            step_width = sum_width / (corners.size() - exception_count);
+        } else {
+            gap_step = -1.0;
+            step_width = -1.0;
+        }
         // std::cout<< corners.size()<<std::endl;
         // std::cout<<sum_width<<std::endl;
         // std::cout<<sum_height<<std::endl;
