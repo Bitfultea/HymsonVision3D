@@ -51,6 +51,12 @@ struct SliceMeasurement {
     Eigen::Vector2d right_boundary =
             Eigen::Vector2d(std::numeric_limits<double>::quiet_NaN(),
                             std::numeric_limits<double>::quiet_NaN());
+    // 2D (x, z) surface points for left/right platform
+    std::vector<Eigen::Vector2d> left_surface_pts;
+    std::vector<Eigen::Vector2d> right_surface_pts;
+    // 3D surface residuals after plane fitting (for filtering)
+    double left_residual = 0.0;
+    double right_residual = 0.0;
     bool accepted = false;
     std::string reject_reason;
 };
@@ -388,7 +394,9 @@ double median_absolute_deviation(const std::vector<double>& values,
 std::vector<SliceMeasurement> collect_slice_measurements(
         const SliceLineSegments& corners,
         const std::vector<double>& lht_width,
-        bool use_lht_width) {
+        bool use_lht_width,
+        const std::vector<std::vector<Eigen::Vector2d>>* left_pts = nullptr,
+        const std::vector<std::vector<Eigen::Vector2d>>* right_pts = nullptr) {
     std::vector<SliceMeasurement> measurements;
     measurements.reserve(corners.size());
 
@@ -423,6 +431,12 @@ std::vector<SliceMeasurement> collect_slice_measurements(
             measurements.push_back(measurement);
             continue;
         }
+
+        // Store surface point sets if provided
+        if (left_pts != nullptr && i < left_pts->size())
+            measurement.left_surface_pts = (*left_pts)[i];
+        if (right_pts != nullptr && i < right_pts->size())
+            measurement.right_surface_pts = (*right_pts)[i];
 
         measurement.accepted = true;
         measurements.push_back(measurement);
@@ -505,15 +519,16 @@ void write_slice_measurements_csv(
 
     std::ofstream ofs(path);
     if (!ofs.is_open()) return;
-    ofs << "slice,width,height,left_x,left_y,right_x,right_y,accepted,"
-           "reject_reason\n";
+    ofs << "slice,width,height,left_x,left_y,right_x,right_y,"
+           "left_residual,right_residual,accepted,reject_reason\n";
     for (const auto& measurement : measurements) {
         ofs << measurement.index << "," << measurement.width << ","
             << measurement.height << "," << measurement.left_boundary.x() << ","
             << measurement.left_boundary.y() << ","
             << measurement.right_boundary.x() << ","
             << measurement.right_boundary.y() << ","
-            << (measurement.accepted ? 1 : 0) << ","
+            << measurement.left_residual << "," << measurement.right_residual
+            << "," << (measurement.accepted ? 1 : 0) << ","
             << measurement.reject_reason << "\n";
     }
 }
@@ -818,6 +833,271 @@ std::vector<std::vector<Eigen::Vector2d>> group_horizontal_by_height(
     groups[1].assign(horiz_pts.begin() + split_idx, horiz_pts.end());
     return groups;
 }
+// ========== 3D Plane Fitting and Consistency Filter ==========
+
+// Fit plane z = a*x + b*y + c using least squares
+Eigen::Vector3d fit_plane_ls(const std::vector<Eigen::Vector3d>& pts) {
+    const size_t n = pts.size();
+    Eigen::MatrixXd A(n, 3);
+    Eigen::VectorXd b_vec(n);
+    for (size_t i = 0; i < n; ++i) {
+        A(i, 0) = pts[i].x();
+        A(i, 1) = pts[i].y();
+        A(i, 2) = 1.0;
+        b_vec(i) = pts[i].z();
+    }
+    return A.colPivHouseholderQr().solve(b_vec);
+}
+
+struct RobustPlaneResult {
+    Eigen::Vector3d coeff;  // (a, b, c) for z = a*x + b*y + c
+    std::vector<double> residuals;
+    double rms = 0.0;
+    double mad = 0.0;
+};
+
+// Robust plane fit: MAD outlier rejection + one re-fit pass
+RobustPlaneResult robust_plane_fit(const std::vector<Eigen::Vector3d>& pts) {
+    RobustPlaneResult result;
+    if (pts.size() < 6) {
+        result.coeff = fit_plane_ls(pts);
+        result.residuals.resize(pts.size());
+        for (size_t i = 0; i < pts.size(); ++i) {
+            double zp = result.coeff(0) * pts[i].x() +
+                        result.coeff(1) * pts[i].y() + result.coeff(2);
+            result.residuals[i] = std::abs(pts[i].z() - zp);
+        }
+        return result;
+    }
+    result.coeff = fit_plane_ls(pts);
+    result.residuals.resize(pts.size());
+    for (size_t i = 0; i < pts.size(); ++i) {
+        double zp = result.coeff(0) * pts[i].x() +
+                    result.coeff(1) * pts[i].y() + result.coeff(2);
+        result.residuals[i] = std::abs(pts[i].z() - zp);
+    }
+    double med = median_value(result.residuals);
+    result.mad = median_absolute_deviation(result.residuals, med);
+    const double threshold = med + 3.0 * 1.4826 * result.mad;
+
+    std::vector<Eigen::Vector3d> inliers;
+    inliers.reserve(pts.size());
+    for (size_t i = 0; i < pts.size(); ++i) {
+        if (result.residuals[i] <= threshold) inliers.push_back(pts[i]);
+    }
+    if (inliers.size() >= std::max<size_t>(6, pts.size() / 3)) {
+        result.coeff = fit_plane_ls(inliers);
+        double sum_sq = 0.0;
+        for (size_t i = 0; i < pts.size(); ++i) {
+            double zp = result.coeff(0) * pts[i].x() +
+                        result.coeff(1) * pts[i].y() + result.coeff(2);
+            result.residuals[i] = std::abs(pts[i].z() - zp);
+            sum_sq += result.residuals[i] * result.residuals[i];
+        }
+        result.rms = std::sqrt(sum_sq / pts.size());
+        med = median_value(result.residuals);
+        result.mad = median_absolute_deviation(result.residuals, med);
+    }
+    return result;
+}
+
+// Per-slice residual computation and 3D+continuity filtering
+// Modifies measurements in-place
+std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
+        std::vector<SliceMeasurement> measurements,
+        const Eigen::Vector3d& trans_mat,
+        const std::string& debug_path) {
+    if (measurements.empty()) return measurements;
+    const int n = static_cast<int>(measurements.size());
+
+    // Build 3D point clouds from accepted slices
+    std::vector<Eigen::Vector3d> left_pts_3d, right_pts_3d;
+    for (int i = 0; i < n; ++i) {
+        auto& m = measurements[i];
+        if (!m.accepted) continue;
+        if (m.left_surface_pts.empty() || m.right_surface_pts.empty()) {
+            m.accepted = false;
+            m.reject_reason = "insufficient_surface_points";
+            continue;
+        }
+        double y_phys = static_cast<double>(m.index) * trans_mat.y();
+        for (const auto& pt : m.left_surface_pts)
+            left_pts_3d.emplace_back(pt.x(), y_phys, pt.y());
+        for (const auto& pt : m.right_surface_pts)
+            right_pts_3d.emplace_back(pt.x(), y_phys, pt.y());
+    }
+    if (left_pts_3d.size() < 6 || right_pts_3d.size() < 6) return measurements;
+
+    // Fit planes
+    RobustPlaneResult left_plane = robust_plane_fit(left_pts_3d);
+    RobustPlaneResult right_plane = robust_plane_fit(right_pts_3d);
+
+    // Compute per-slice mean residuals
+    for (int i = 0; i < n; ++i) {
+        auto& m = measurements[i];
+        if (!m.accepted) continue;
+        double y_phys = static_cast<double>(m.index) * trans_mat.y();
+        double sum_l = 0.0;
+        for (const auto& pt : m.left_surface_pts) {
+            double zp = left_plane.coeff(0) * pt.x() +
+                        left_plane.coeff(1) * y_phys + left_plane.coeff(2);
+            sum_l += std::abs(pt.y() - zp);
+        }
+        m.left_residual = sum_l / m.left_surface_pts.size();
+        double sum_r = 0.0;
+        for (const auto& pt : m.right_surface_pts) {
+            double zp = right_plane.coeff(0) * pt.x() +
+                        right_plane.coeff(1) * y_phys + right_plane.coeff(2);
+            sum_r += std::abs(pt.y() - zp);
+        }
+        m.right_residual = sum_r / m.right_surface_pts.size();
+    }
+
+    // Collect statistics from accepted slices
+    std::vector<double> lr, rr, ws, hs;
+    for (const auto& m : measurements) {
+        if (!m.accepted) continue;
+        lr.push_back(m.left_residual);
+        rr.push_back(m.right_residual);
+        ws.push_back(m.width);
+        hs.push_back(m.height);
+    }
+    if (lr.size() < 7) return measurements;
+
+    double lr_m = median_value(lr),
+           lr_mad = median_absolute_deviation(lr, lr_m);
+    double rr_m = median_value(rr),
+           rr_mad = median_absolute_deviation(rr, rr_m);
+    double lr_limit = lr_m + 4.0 * 1.4826 * lr_mad;
+    double rr_limit = rr_m + 4.0 * 1.4826 * rr_mad;
+    double w_m = median_value(ws), w_mad = median_absolute_deviation(ws, w_m);
+    double h_m = median_value(hs), h_mad = median_absolute_deviation(hs, h_m);
+    double w_limit = std::max(3.0 * 1.4826 * w_mad, w_m * 0.3);
+    double h_limit = std::max(3.0 * 1.4826 * h_mad, h_m * 0.3);
+
+    // Apply filter
+    for (int i = 0; i < n; ++i) {
+        auto& m = measurements[i];
+        if (!m.accepted) continue;
+        if (m.left_residual > lr_limit) {
+            m.accepted = false;
+            m.reject_reason = "left_surface_residual_outlier";
+            continue;
+        }
+        if (m.right_residual > rr_limit) {
+            m.accepted = false;
+            m.reject_reason = "right_surface_residual_outlier";
+            continue;
+        }
+        // Width continuity with neighbors
+        bool w_jump = false;
+        for (int dj : {-1, 1}) {
+            int j = i + dj;
+            if (j < 0 || j >= n || !measurements[j].accepted) continue;
+            if (std::abs(m.width - measurements[j].width) > w_limit) {
+                w_jump = true;
+                break;
+            }
+        }
+        if (w_jump) {
+            m.accepted = false;
+            m.reject_reason = "width_local_jump";
+            continue;
+        }
+        // Height continuity
+        bool h_jump = false;
+        for (int dj : {-1, 1}) {
+            int j = i + dj;
+            if (j < 0 || j >= n || !measurements[j].accepted) continue;
+            if (std::abs(std::abs(m.height) -
+                         std::abs(measurements[j].height)) > h_limit) {
+                h_jump = true;
+                break;
+            }
+        }
+        if (h_jump) {
+            m.accepted = false;
+            m.reject_reason = "height_local_jump";
+            continue;
+        }
+        // x-boundary continuity
+        bool b_jump = false;
+        for (int dj : {-1, 1}) {
+            int j = i + dj;
+            if (j < 0 || j >= n || !measurements[j].accepted) continue;
+            double gap = measurements[j].right_boundary.x() -
+                         measurements[j].left_boundary.x();
+            double limit = std::max(0.5, gap * 0.5);
+            if (std::abs(m.left_boundary.x() -
+                         measurements[j].left_boundary.x()) > limit ||
+                std::abs(m.right_boundary.x() -
+                         measurements[j].right_boundary.x()) > limit) {
+                b_jump = true;
+                break;
+            }
+        }
+        if (b_jump) {
+            m.accepted = false;
+            m.reject_reason = "boundary_local_jump";
+            continue;
+        }
+        if (m.right_surface_pts.size() < kMinSurfacePoints) {
+            m.accepted = false;
+            m.reject_reason = "short_right_support";
+            continue;
+        }
+    }
+
+    // Debug output
+    if (!debug_path.empty()) {
+        std::string path = debug_path;
+        if (path.back() != '/' && path.back() != '\\') path += "/";
+        std::ofstream ofs(path + "slice_metrics_3d.csv");
+        if (ofs.is_open()) {
+            ofs << "slice,width,height,left_x,right_x,"
+                   "left_residual,right_residual,accepted,reject_reason\n";
+            for (const auto& m : measurements)
+                ofs << m.index << "," << m.width << "," << m.height << ","
+                    << m.left_boundary.x() << "," << m.right_boundary.x() << ","
+                    << m.left_residual << "," << m.right_residual << ","
+                    << (m.accepted ? 1 : 0) << "," << m.reject_reason << "\n";
+        }
+        // Overview plots
+        auto draw_overview = [&](const std::string& fname,
+                                 const std::vector<double>& vals) {
+            if (vals.empty() || n < 2) return;
+            cv::Mat img(400, 800, CV_8UC3, cv::Scalar(255, 255, 255));
+            double vmin = *std::min_element(vals.begin(), vals.end());
+            double vmax = *std::max_element(vals.begin(), vals.end());
+            double vspan = std::max(vmax - vmin, 1e-9);
+            for (int i = 1; i < n; ++i) {
+                int x1 = (i - 1) * 780 / (n - 1) + 10;
+                int x2 = i * 780 / (n - 1) + 10;
+                int y1 = static_cast<int>(380 -
+                                          (vals[i - 1] - vmin) / vspan * 360);
+                int y2 = static_cast<int>(380 - (vals[i] - vmin) / vspan * 360);
+                cv::Scalar color = measurements[i].accepted
+                                           ? cv::Scalar(0, 128, 0)
+                                           : cv::Scalar(0, 0, 255);
+                cv::line(img, cv::Point(x1, y1), cv::Point(x2, y2), color, 1);
+            }
+            cv::imwrite(path + fname, img);
+        };
+        std::vector<double> wv(n), hv(n), lrv(n), rrv(n);
+        for (int i = 0; i < n; ++i) {
+            wv[i] = measurements[i].accepted ? measurements[i].width : 0;
+            hv[i] = measurements[i].accepted ? measurements[i].height : 0;
+            lrv[i] = measurements[i].left_residual;
+            rrv[i] = measurements[i].right_residual;
+        }
+        draw_overview("width_vs_slice.png", wv);
+        draw_overview("height_vs_slice.png", hv);
+        draw_overview("left_residual_vs_slice.png", lrv);
+        draw_overview("right_residual_vs_slice.png", rrv);
+    }
+    return measurements;
+}
+
 }  // namespace
 
 void GapStepDetection::detect_gap_step(
@@ -966,24 +1246,32 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
     // slice along y axis
     slice_along_y(cloud, transformation_matrix);
 
-    // bspline interpolation
+    // bspline interpolation with surface point extraction
     std::vector<double> LHT_width;
     lineSegments corners;
-    // bspline_interpolation(cloud, height_threshold, corners, debug_mode);
-    // std::cout << "3" << std::endl;
+    std::vector<std::vector<Eigen::Vector2d>> left_surface, right_surface;
     bspline_interpolation_dll2(cloud, height_threshold, corners, LHT_width,
-                               debug_path, LHT, debug_mode);
-    // std::cout << "3" << std::endl;
+                               debug_path, LHT, debug_mode, &left_surface,
+                               &right_surface);
 
-    // calculate the gap step result
-    calculate_gap_step_dll_plot(corners, LHT_width, gap_step, step_width,
-                                temp_res, LHT);
-    if (debug_mode) {
-        write_slice_measurements_csv(
-                debug_path,
-                collect_slice_measurements(corners, LHT_width, LHT));
+    // Collect measurements with surface points
+    auto measurements = collect_slice_measurements(
+            corners, LHT_width, LHT, &left_surface, &right_surface);
+
+    // 3D consistency filter
+    {
+        std::string filter_debug_path = debug_mode ? debug_path : "";
+        measurements = filter_slices_by_3d_consistency(
+                measurements, transformation_matrix, filter_debug_path);
     }
-    // std::cout << "4" << std::endl;
+
+    // Fill results from filtered measurements
+    fill_result_from_measurements(measurements, gap_step, step_width,
+                                  &temp_res);
+
+    if (debug_mode) {
+        write_slice_measurements_csv(debug_path, measurements);
+    }
 }
 
 void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
@@ -1168,16 +1456,22 @@ void GapStepDetection::bspline_interpolation_dll2(
         std::vector<double>& LHT_width,
         std::string& debug_path,
         bool LHT,
-        bool debug_mode) {
+        bool debug_mode,
+        std::vector<std::vector<Eigen::Vector2d>>* left_surface,
+        std::vector<std::vector<Eigen::Vector2d>>* right_surface) {
     // use common part to fit a curve
     core::PlaneDetection plane_detector;
     std::vector<double> step_height;
-    step_height.resize(cloud->y_slices_.size());
-    corners.resize(cloud->y_slices_.size());
-    LHT_width.resize(cloud->y_slices_.size());
+    size_t n_slices = cloud->y_slices_.size();
+    step_height.resize(n_slices);
+    corners.resize(n_slices);
+    LHT_width.resize(n_slices);
     std::fill(corners.begin(), corners.end(), invalid_corner());
     std::fill(step_height.begin(), step_height.end(), -255.0);
     std::fill(LHT_width.begin(), LHT_width.end(), -255.0);
+
+    if (left_surface) left_surface->resize(n_slices);
+    if (right_surface) right_surface->resize(n_slices);
 
 #pragma omp parallel for
     for (int i = 0; i < cloud->y_slices_.size(); i++) {
@@ -1206,6 +1500,12 @@ void GapStepDetection::bspline_interpolation_dll2(
 
         std::vector<std::vector<Eigen::Vector2d>> filter_groups =
                 statistics_filter(groups, limit_pts);
+
+        // Save surface points for 3D filtering
+        if (left_surface && filter_groups.size() > 0)
+            (*left_surface)[i] = filter_groups[0];
+        if (right_surface && filter_groups.size() > 1)
+            (*right_surface)[i] = filter_groups[1];
 
         double left_height_threshold = height_threshold,
                right_height_threshold = height_threshold;
@@ -2127,6 +2427,168 @@ std::vector<double> GapStepDetection::test_group_line_slopes(
                                    : (line.second.y() - line.first.y()) / dx);
     }
     return slopes;
+}
+
+// Test: 3D consistency filter with synthetic slices
+int GapStepDetection::test_3d_consistency_filter(const std::string& debug_dir) {
+    const int n_slices = 20;
+    const double y_step = 0.03;  // transformation_matrix.y()
+    Eigen::Vector3d trans_mat(0.01, y_step, 0.001);
+
+    // Helper: build a slice with known geometry
+    auto make_slice = [](int idx, double left_x0, double left_z0,
+                         double right_x0, double right_z0, double width,
+                         double height, int n_left_pts = 10,
+                         int n_right_pts = 8) {
+        SliceMeasurement m;
+        m.index = idx;
+        m.left_boundary = Eigen::Vector2d(left_x0, left_z0);
+        m.right_boundary = Eigen::Vector2d(right_x0, right_z0);
+        m.width = width;
+        m.height = height;
+        // Generate surface points near the boundaries
+        for (int k = 0; k < n_left_pts; ++k) {
+            double x = left_x0 - 0.5 + k * 1.0 / n_left_pts;
+            m.left_surface_pts.emplace_back(x, left_z0 + 0.001 * (k % 3 - 1));
+        }
+        for (int k = 0; k < n_right_pts; ++k) {
+            double x = right_x0 - 0.5 + k * 1.0 / n_right_pts;
+            m.right_surface_pts.emplace_back(x, right_z0 + 0.001 * (k % 3 - 1));
+        }
+        m.accepted = true;
+        return m;
+    };
+
+    // ----- Test 1: All normal slices, all should be accepted -----
+    {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            measurements.push_back(
+                    make_slice(i, 10.0, 5.0, 15.0, 8.0, 5.0, 3.0));
+        }
+        auto filtered = filter_slices_by_3d_consistency(
+                measurements, trans_mat,
+                debug_dir.empty() ? "" : debug_dir + "/test1_all_normal");
+        int accepted_count = 0;
+        for (const auto& m : filtered)
+            if (m.accepted) accepted_count++;
+        if (accepted_count < n_slices) {
+            std::cerr << "TEST1 FAIL: expected all " << n_slices
+                      << " slices accepted, got " << accepted_count
+                      << std::endl;
+            return 1;
+        }
+    }
+
+    // ----- Test 2: Some slices have right surface jumping to valley -----
+    {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            auto m = make_slice(i, 10.0, 5.0, 15.0, 8.0, 5.0, 3.0);
+            // Slice 5-7: right surface dropped to valley (much lower z)
+            if (i >= 5 && i <= 7) {
+                m.right_surface_pts.clear();
+                for (int k = 0; k < 8; ++k) {
+                    m.right_surface_pts.emplace_back(15.0 + k * 0.1,
+                                                     -5.0 + 0.001 * k);
+                }
+                m.right_boundary = Eigen::Vector2d(15.0, -5.0);
+            }
+            measurements.push_back(m);
+        }
+        auto filtered = filter_slices_by_3d_consistency(
+                measurements, trans_mat,
+                debug_dir.empty() ? "" : debug_dir + "/test2_valley_jump");
+        for (int i = 5; i <= 7; ++i) {
+            if (filtered[i].accepted) {
+                std::cerr << "TEST2 FAIL: slice " << i
+                          << " with valley jump should be rejected"
+                          << std::endl;
+                return 1;
+            }
+        }
+        if (!filtered[0].accepted || !filtered[10].accepted) {
+            std::cerr << "TEST2 FAIL: normal slices should still be accepted"
+                      << std::endl;
+            return 1;
+        }
+    }
+
+    // ----- Test 3: Width jump on some slices -----
+    {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            double w = (i == 10) ? 20.0 : 5.0;  // sudden width jump at slice 10
+            measurements.push_back(
+                    make_slice(i, 10.0, 5.0, 10.0 + w, 8.0, w, 3.0));
+        }
+        auto filtered = filter_slices_by_3d_consistency(
+                measurements, trans_mat,
+                debug_dir.empty() ? "" : debug_dir + "/test3_width_jump");
+        if (filtered[10].accepted) {
+            std::cerr << "TEST3 FAIL: slice with width jump should be rejected"
+                      << std::endl;
+            return 1;
+        }
+        if (!filtered[0].accepted || !filtered[15].accepted) {
+            std::cerr << "TEST3 FAIL: normal slices should be accepted"
+                      << std::endl;
+            return 1;
+        }
+    }
+
+    // ----- Test 4: Equal height, gap preserved (gap shouldn't cause rejection)
+    // -----
+    {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            // Left and right at same height but with a gap
+            measurements.push_back(
+                    make_slice(i, 10.0, 5.0, 20.0, 5.0, 10.0, 0.0));
+        }
+        auto filtered = filter_slices_by_3d_consistency(
+                measurements, trans_mat,
+                debug_dir.empty() ? "" : debug_dir + "/test4_equal_height_gap");
+        int accepted_count = 0;
+        for (const auto& m : filtered)
+            if (m.accepted) accepted_count++;
+        if (accepted_count < n_slices) {
+            std::cerr << "TEST4 FAIL: equal-height slices with gap should all "
+                         "be accepted, got "
+                      << accepted_count << "/" << n_slices << std::endl;
+            return 1;
+        }
+    }
+
+    // ----- Test 5: Right surface missing points on a few slices -----
+    {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            auto m = make_slice(i, 10.0, 5.0, 15.0, 8.0, 5.0, 3.0);
+            if (i == 12 || i == 13) {
+                // Very few right surface points
+                m.right_surface_pts.clear();
+                m.right_surface_pts.emplace_back(15.0, 8.0);
+            }
+            measurements.push_back(m);
+        }
+        auto filtered = filter_slices_by_3d_consistency(
+                measurements, trans_mat,
+                debug_dir.empty() ? "" : debug_dir + "/test5_short_right");
+        if (filtered[12].accepted || filtered[13].accepted) {
+            std::cerr << "TEST5 FAIL: slices with short right support should "
+                         "be rejected"
+                      << std::endl;
+            return 1;
+        }
+        if (!filtered[0].accepted || !filtered[10].accepted) {
+            std::cerr << "TEST5 FAIL: normal slices should be accepted"
+                      << std::endl;
+            return 1;
+        }
+    }
+
+    return 0;
 }
 #endif
 

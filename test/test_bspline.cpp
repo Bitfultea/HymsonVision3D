@@ -318,6 +318,10 @@ int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--self-test") {
         return run_self_test(argc > 2 ? argv[2] : nullptr);
     }
+    if (argc > 1 && std::string(argv[1]) == "--self-test-3d") {
+        return pipeline::GapStepDetection::test_3d_consistency_filter(
+                argc > 2 ? argv[2] : "");
+    }
 
     const char* input_path = (argc > 1) ? argv[1] : DEFAULT_PLY;
     const char* debug_dir = nullptr;

@@ -54,7 +54,11 @@ public:
                                           std::vector<double>& LHT_width,
                                           std::string& debug_path,
                                           bool LHT,
-                                          bool debug_mode);
+                                          bool debug_mode,
+                                          std::vector<std::vector<Eigen::Vector2d>>*
+                                                  left_surface = nullptr,
+                                          std::vector<std::vector<Eigen::Vector2d>>*
+                                                  right_surface = nullptr);
     static void calculate_gap_step(lineSegments& corners,
                                    double& gap_step,
                                    double& step_width);
@@ -69,6 +73,9 @@ public:
     test_group_by_derivative_dll(std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<double> test_group_line_slopes(
             std::vector<Eigen::Vector2d>& sampled_pts);
+    // 3D consistency filter self-test entry
+    static int test_3d_consistency_filter(
+            const std::string& debug_dir);
 #endif
 
 private:
