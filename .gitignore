@@ -15,3 +15,7 @@ ml/yolo_3d/runs
 ml/yolo_3d/*.pt
 ml/yolo_3d/temp_inference.png
 ml/yolo_3d/__pycache__/pre_process_data.cpython-312.pyc
+build_with_system_libusb.sh
+.remember/*
+bspline_debug/*
+bspline_debug_ply/*

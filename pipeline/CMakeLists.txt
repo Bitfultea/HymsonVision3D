@@ -2,6 +2,7 @@ file(GLOB_RECURSE pipe_header "*.h")
 file(GLOB_RECURSE pipe_source "*.cpp")
 # Create a shared library
 add_library(pipeline SHARED ${pipe_source})
+target_compile_definitions(pipeline PRIVATE HYMSON3D_TESTING)
 # Include headers in build process
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 

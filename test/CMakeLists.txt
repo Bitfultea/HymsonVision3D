@@ -199,6 +199,10 @@ target_link_libraries(
   pipeline
   core_lib
 )
+target_compile_definitions(bspline_test PRIVATE HYMSON3D_TESTING)
+if(UNIX AND NOT APPLE)
+  target_link_libraries(bspline_test usb-1.0)
+endif()
 
 
 target_link_libraries(

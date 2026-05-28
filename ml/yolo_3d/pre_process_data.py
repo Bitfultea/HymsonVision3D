@@ -6,6 +6,43 @@ import shutil
 from pathlib import Path
 
 
+def read_tiff_height_intensity(tiff_path):
+    """读取 HALCON 双通道 TIFF：主 IFD 为高度，SubIFD 为强度。"""
+    with tiff.TiffFile(tiff_path) as tif:
+        height = tif.pages[0].asarray()
+        intensity = None
+        subifds = getattr(tif.pages[0], "pages", None)
+        if subifds is not None and len(subifds) > 0:
+            intensity = subifds[0].asarray()
+    return height, intensity
+
+
+def write_tiff_height_intensity(output_path, height, intensity=None):
+    """写出高度 TIFF；存在强度图时保留为 SubIFD，便于 HALCON decompose2。"""
+    if intensity is None:
+        tiff.imwrite(output_path, height)
+        return
+
+    if height.shape[:2] != intensity.shape[:2]:
+        raise ValueError(
+            f"height/intensity size mismatch: {height.shape} vs {intensity.shape}"
+        )
+
+    with tiff.TiffWriter(output_path) as tif:
+        tif.write(
+            height,
+            photometric="minisblack",
+            metadata=None,
+            subifds=1,
+        )
+        tif.write(
+            intensity,
+            photometric="minisblack",
+            metadata=None,
+            subfiletype=1,
+        )
+
+
 def robust_normalize(data, lower_percent=0.5, upper_percent=99.5, hard_limit=None):
     """
     鲁棒归一化：
@@ -41,6 +78,131 @@ def robust_normalize(data, lower_percent=0.5, upper_percent=99.5, hard_limit=Non
         
     norm_data = ((data_clipped - lower) / denominator * 255).astype(np.uint8)
     return norm_data
+
+
+def signed_robust_normalize(data, percentile=99.0, hard_limit=None):
+    """将有正负方向的特征映射到 uint8，0 映射到 128。"""
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+    if hard_limit is None:
+        limit = np.percentile(np.abs(data), percentile)
+    else:
+        limit = float(hard_limit)
+
+    if limit <= 0:
+        return np.full_like(data, 128, dtype=np.uint8)
+
+    clipped = np.clip(data, -limit, limit)
+    return ((clipped + limit) / (2 * limit) * 255).astype(np.uint8)
+
+
+def preprocess_height_for_features(height, lower_percent=0.5, upper_percent=99.5):
+    """清理高度图并截断飞点，保留 float 精度用于特征计算。"""
+    height = np.asarray(height, dtype=np.float32)
+    height = np.nan_to_num(height, nan=0.0, posinf=0.0, neginf=0.0)
+    lower = np.percentile(height, lower_percent)
+    upper = np.percentile(height, upper_percent)
+    if upper <= lower:
+        return height
+    return np.clip(height, lower, upper)
+
+
+def local_roughness(data, ksize=7):
+    """用局部标准差近似粗糙度，对微小凹凸和纹理扰动敏感。"""
+    if ksize % 2 == 0:
+        ksize += 1
+    data = np.asarray(data, dtype=np.float32)
+    mean = cv2.blur(data, (ksize, ksize))
+    mean_sq = cv2.blur(data * data, (ksize, ksize))
+    variance = np.maximum(mean_sq - mean * mean, 0.0)
+    return np.sqrt(variance)
+
+
+def height_defect_feature_channels(height,
+                                   baseline_sigma=15,
+                                   clip_percent=(0.5, 99.5),
+                                   residual_percentile=99.0,
+                                   roughness_ksize=7):
+    """生成 2.5D 几何缺陷特征：residual、gradient、roughness。"""
+    height = preprocess_height_for_features(height, *clip_percent)
+    baseline = cv2.GaussianBlur(height, (0, 0), baseline_sigma)
+    residual = height - baseline
+
+    sobel_x = cv2.Sobel(height, cv2.CV_32F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(height, cv2.CV_32F, 0, 1, ksize=3)
+    gradient = cv2.magnitude(sobel_x, sobel_y)
+    roughness = local_roughness(residual, roughness_ksize)
+
+    residual_u8 = signed_robust_normalize(residual, residual_percentile)
+    gradient_u8 = robust_normalize(gradient, 0, 99.0)
+    roughness_u8 = robust_normalize(roughness, 0, 99.0)
+    return residual_u8, gradient_u8, roughness_u8
+
+
+def convert_tiff_to_3channel_defect_features(tiff_path,
+                                             output_path,
+                                             baseline_sigma=15,
+                                             clip_percent=(0.5, 99.5),
+                                             residual_percentile=99.0,
+                                             roughness_ksize=7):
+    """
+    面向 YOLO 训练的纯几何 2.5D 预处理。
+
+    B: 局部去背景后的 signed residual
+    G: 梯度幅值
+    R: 局部粗糙度/曲率近似
+    """
+    height, _ = read_tiff_height_intensity(tiff_path)
+    residual_u8, gradient_u8, roughness_u8 = height_defect_feature_channels(
+        height,
+        baseline_sigma=baseline_sigma,
+        clip_percent=clip_percent,
+        residual_percentile=residual_percentile,
+        roughness_ksize=roughness_ksize,
+    )
+    merged_img = cv2.merge([residual_u8, gradient_u8, roughness_u8])
+    cv2.imwrite(output_path, merged_img)
+
+
+def convert_tiff_to_3channel_intensity_features(tiff_path,
+                                                output_path,
+                                                third_channel="gradient",
+                                                baseline_sigma=15,
+                                                clip_percent=(0.5, 99.5),
+                                                residual_percentile=99.0,
+                                                roughness_ksize=7):
+    """
+    面向 YOLO 训练的高度 + 强度融合预处理。
+
+    B: 局部去背景后的 signed residual
+    G: 从 SubIFD 分离出的 intensity
+    R: gradient 或 roughness，由 third_channel 指定
+    """
+    height, intensity = read_tiff_height_intensity(tiff_path)
+    if intensity is None:
+        raise ValueError(f"{tiff_path} does not contain SubIFD intensity")
+    if height.shape[:2] != intensity.shape[:2]:
+        raise ValueError(
+            f"height/intensity size mismatch: {height.shape} vs {intensity.shape}"
+        )
+
+    residual_u8, gradient_u8, roughness_u8 = height_defect_feature_channels(
+        height,
+        baseline_sigma=baseline_sigma,
+        clip_percent=clip_percent,
+        residual_percentile=residual_percentile,
+        roughness_ksize=roughness_ksize,
+    )
+    intensity_u8 = robust_normalize(intensity, 0.5, 99.5)
+
+    if third_channel == "gradient":
+        third_u8 = gradient_u8
+    elif third_channel == "roughness":
+        third_u8 = roughness_u8
+    else:
+        raise ValueError("third_channel must be 'gradient' or 'roughness'")
+
+    merged_img = cv2.merge([residual_u8, intensity_u8, third_u8])
+    cv2.imwrite(output_path, merged_img)
 
 
 def convert_tiff_to_3channel(tiff_path, output_path):
@@ -265,17 +427,121 @@ def convert_tiff_to_3channel_normal(tiff_path, output_path):
     merged_img = cv2.merge([norm_height, norm_Nx, norm_Ny]) # BGR 顺序
     cv2.imwrite(output_path, merged_img)
 
+def crop_tiff(tiff_path, output_path, x, y, w, h):
+    """裁切 TIFF 高度图的指定区域
+
+    Args:
+        tiff_path:  输入 TIFF 文件路径
+        output_path: 输出 TIFF 文件路径
+        x, y: 裁切区域左上角像素坐标
+        w, h: 裁切区域的宽、高（像素）
+    """
+    data = tiff.imread(tiff_path)
+    cropped = data[y:y+h, x:x+w]
+    tiff.imwrite(output_path, cropped)
+    print(f"Cropped {data.shape} -> {cropped.shape}, saved to {output_path}")
+
+
+def crop_tiff_center(tiff_path, output_path, cx, cy, w, h):
+    """以中心点裁切 TIFF
+
+    Args:
+        tiff_path:  输入 TIFF 文件路径
+        output_path: 输出 TIFF 文件路径
+        cx, cy: 裁切中心点像素坐标
+        w, h: 裁切区域的宽、高（像素）
+    """
+    x = cx - w // 2
+    y = cy - h // 2
+    x = max(0, x)
+    y = max(0, y)
+    crop_tiff(tiff_path, output_path, x, y, w, h)
+
+
+def batch_crop_tiff(input_dir, output_dir, x, y, w, h):
+    """批量裁切文件夹中所有 TIFF 的同一区域
+
+    Args:
+        input_dir:  输入文件夹路径
+        output_dir: 输出文件夹路径
+        x, y, w, h: 裁切区域参数（同 crop_tiff）
+    """
+    input_dir = Path(input_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tiff_files = sorted(input_dir.glob("*.tif*"))
+    if not tiff_files:
+        print(f"文件夹 {input_dir} 中没有 TIFF 文件")
+        return
+
+    for f in tiff_files:
+        out_path = output_dir / f.name
+        crop_tiff(str(f), str(out_path), x, y, w, h)
+
+
+def batch_strip_top_rows(input_dir, output_dir, n=5):
+    """批量移除每个 TIFF 最上方的 n 行数据，并保留 SubIFD 强度图。
+
+    Args:
+        input_dir:  输入文件夹路径
+        output_dir: 输出文件夹路径
+        n: 要移除的行数（默认 5）
+    """
+    input_dir = Path(input_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tiff_files = sorted(input_dir.glob("*.tif*"))
+    if not tiff_files:
+        print(f"文件夹 {input_dir} 中没有 TIFF 文件")
+        return
+
+    for f in tiff_files:
+        height, intensity = read_tiff_height_intensity(str(f))
+        h, w = height.shape[:2]
+        if n < 0 or n >= h:
+            raise ValueError(f"n must be in [0, {h}), got {n}")
+
+        cropped = height[n:h, 0:w]
+        cropped_intensity = None
+        if intensity is not None:
+            ih, iw = intensity.shape[:2]
+            if (ih, iw) != (h, w):
+                raise ValueError(
+                    f"{f.name}: height/intensity size mismatch "
+                    f"{height.shape} vs {intensity.shape}"
+                )
+            cropped_intensity = intensity[n:ih, 0:iw]
+
+        out_path = output_dir / f.name
+        write_tiff_height_intensity(str(out_path), cropped, cropped_intensity)
+
+        if cropped_intensity is None:
+            print(f"{f.name}: height {height.shape} -> {cropped.shape}")
+        else:
+            print(
+                f"{f.name}: height {height.shape} -> {cropped.shape}, "
+                f"intensity {intensity.shape} -> {cropped_intensity.shape}"
+            )
+
+
 # --- 批量处理示例 ---
 if __name__ == "__main__":
     # 假设你的原始tiff在 'raw_tiffs' 文件夹，处理后存入 'dataset/images/train'
     # input_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/collection")
     # output_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/preprocessed")
-    input_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/rename_tiff")
-    output_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/whole_processed_with_new_alg_2")
+    
+    batch_strip_top_rows("/home/charles/Data/Dataset/Collected/针孔3D/3D_rename",
+                         "/home/charles/Data/Dataset/Collected/针孔3D/3D_rename_crop")
+    
+    input_dir = Path("/home/charles/Data/Dataset/Collected/针孔3D/3D_rename_crop")
+    output_dir = Path("/home/charles/Data/Dataset/Collected/针孔3D/3d_preproces")
     gray_image_dir = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/yolo_3d/GrayImages")
 
     tiff_save = Path("/home/charles/Data/Dataset/Collected/密封钉/密封钉3D缺陷收集/密封钉缺陷图片/rename")
     output_dir.mkdir(parents=True, exist_ok=True)
+    
     # id = 0
     for file in input_dir.glob("*.tif*"):
         file_name = os.path.splitext(file)

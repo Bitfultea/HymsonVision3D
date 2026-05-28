@@ -331,11 +331,10 @@ std::shared_ptr<geometry::BSpline> PlaneDetection::generate_a_curve(
 }
 
 Eigen::VectorXd PlaneDetection::fit_a_curve(
-        std::vector<Eigen::Vector2d> control_pts,
+        const std::vector<Eigen::Vector2d>& control_pts,
         int sampled_pts,
         int plot_id,
         bool debug_mode) {
-    // 控制点 (x 和 y)
     int n = control_pts.size();
     Eigen::VectorXd x(n);
     Eigen::VectorXd y(n);
@@ -345,68 +344,43 @@ Eigen::VectorXd PlaneDetection::fit_a_curve(
         y(i) = control_pts[i](1);
     }
 
-    // 打印控制点的维度x
-    // std::cout << "Control points x size: " << x.size() << std::endl;
-    // std::cout << "Control points y size: " << y.size() << std::endl;
-
-    // 创建样条对象
-    geometry::BSpline spline(3);  // 默认三次样条
+    geometry::BSpline spline(3);
     spline.setControlPoints(x, y);
 
-    // 生成节点
     Eigen::VectorXd knots =
             spline.generateKnots(x.size(), x(0), x(x.size() - 1), 2);
-
-    // 打印生成的节点
-    // std::cout << "Generated knots size: " << knots.size() << std::endl;
     spline.setKnots(knots);
 
-    // 生成样条基
-    Eigen::VectorXd pts =
-            Eigen::VectorXd::LinSpaced(100, x(0), x(x.size() - 1));
-    Eigen::MatrixXd B = spline.generateSplineBasis(pts);
-
-    // 打印样条基矩阵的维度
-    // if (debug_mode)
-    //     std::cout << "Spline basis B size: " << B.rows() << "x" <<
-    //     B.cols()
-    //               << std::endl;
-
-    std::vector<double> x_vec(x.data(), x.data() + x.size());
-    std::vector<double> y_vec(y.data(), y.data() + y.size());
-
-    // 绘制样条曲线
-    Eigen::VectorXd spline_x = spline.getSplineX(pts);
-    Eigen::VectorXd spline_y = spline.getSplineY(pts);
-    // std::cout << "Spline X values: " << spline_x.transpose() <<
-    // std::endl; std::cout << "Spline Y values: " << spline_y.transpose()
-    // << std::endl;
-
-    // 差值新的点
+    // Interpolate: always needed
     Eigen::VectorXd u = Eigen::VectorXd::LinSpaced(
             sampled_pts, std::max(x.minCoeff(), 0.0), x.maxCoeff());
     Eigen::VectorXd v = spline.interpolate(u);
-    // std::cout << x << std::endl;
-    // std::cout << "-------------------------" << std::endl;
-    // std::cout << v.transpose() << std::endl;
-    // std::cout << u.transpose() << std::endl;
-    std::vector<double> u_vec(u.data(), u.data() + u.size());
-    std::vector<double> v_vec(v.data(), v.data() + v.size());
 
-    std::vector<double> spline_x_vec(spline_x.data(),
-                                     spline_x.data() + spline_x.size());
-    std::vector<double> spline_y_vec(spline_y.data(),
-                                     spline_y.data() + spline_y.size());
+    if (debug_mode) {
+        // Debug-only: compute spline curve for visualization
+        Eigen::VectorXd pts =
+                Eigen::VectorXd::LinSpaced(100, x(0), x(x.size() - 1));
+        Eigen::VectorXd spline_x = spline.getSplineX(pts);
+        Eigen::VectorXd spline_y = spline.getSplineY(pts);
 
-    if (debug_mode)
+        std::vector<double> x_vec(x.data(), x.data() + x.size());
+        std::vector<double> y_vec(y.data(), y.data() + y.size());
+        std::vector<double> u_vec(u.data(), u.data() + u.size());
+        std::vector<double> v_vec(v.data(), v.data() + v.size());
+        std::vector<double> spline_x_vec(spline_x.data(),
+                                         spline_x.data() + spline_x.size());
+        std::vector<double> spline_y_vec(spline_y.data(),
+                                         spline_y.data() + spline_y.size());
+
         plot_curve(x_vec, y_vec, u_vec, v_vec, spline_x_vec, spline_y_vec,
                    plot_id);
+    }
 
     return v;
 }
 
 std::vector<Eigen::Vector2d> PlaneDetection::resample_a_curve(
-        std::vector<Eigen::Vector2d> control_pts,
+        const std::vector<Eigen::Vector2d>& control_pts,
         int sampled_pts,
         int plot_id,
         bool debug_mode) {
@@ -419,59 +393,44 @@ std::vector<Eigen::Vector2d> PlaneDetection::resample_a_curve(
         y(i) = control_pts[i](1);
     }
 
-    // 创建样条对象
-    geometry::BSpline spline(3);  // 默认三次样条
+    // Create spline and generate knots
+    geometry::BSpline spline(3);
     spline.setControlPoints(x, y);
 
-    // 生成节点
     Eigen::VectorXd knots =
             spline.generateKnots(x.size(), x(0), x(x.size() - 1), 2);
-
-    // 打印生成的节点
-    // std::cout << "Generated knots size: " << knots.size() << std::endl;
     spline.setKnots(knots);
 
-    // 生成样条基
-    Eigen::VectorXd pts =
-            Eigen::VectorXd::LinSpaced(100, x(0), x(x.size() - 1));
-    Eigen::MatrixXd B = spline.generateSplineBasis(pts);
-
-    // 打印样条基矩阵的维度
-    // if (debug_mode)
-    //     std::cout << "Spline basis B size: " << B.rows() << "x" <<
-    //     B.cols()
-    //               << std::endl;
-
-    std::vector<double> x_vec(x.data(), x.data() + x.size());
-    std::vector<double> y_vec(y.data(), y.data() + y.size());
-
-    // 绘制样条曲线
-    Eigen::VectorXd spline_x = spline.getSplineX(pts);
-    Eigen::VectorXd spline_y = spline.getSplineY(pts);
-
+    // Resample: always needed
     Eigen::VectorXd u = Eigen::VectorXd::LinSpaced(
             sampled_pts, std::max(x.minCoeff(), 0.0), x.maxCoeff());
     Eigen::VectorXd v = spline.interpolate(u);
 
-    std::vector<double> u_vec(u.data(), u.data() + u.size());  // x
-    std::vector<double> v_vec(v.data(), v.data() + v.size());  // z
+    std::vector<double> u_vec(u.data(), u.data() + u.size());
+    std::vector<double> v_vec(v.data(), v.data() + v.size());
 
     std::vector<Eigen::Vector2d> resample_pts;
     resample_pts.resize(u_vec.size());
-#pragma omp parallel
+#pragma omp parallel for
     for (int i = 0; i < u_vec.size(); i++) {
-        // std::cout << "u= " << u_vec[i] << " v= " << v_vec[i] <<
-        // std::endl;
         resample_pts[i] = Eigen::Vector2d(u_vec[i], v_vec[i]);
     }
 
     if (debug_mode) {
-        // 将坐标缩放到图像大小
+        // Debug-only: compute spline curve for visualization
+        Eigen::VectorXd pts =
+                Eigen::VectorXd::LinSpaced(100, x(0), x(x.size() - 1));
+        Eigen::VectorXd spline_x = spline.getSplineX(pts);
+        Eigen::VectorXd spline_y = spline.getSplineY(pts);
+
+        std::vector<double> x_vec(x.data(), x.data() + x.size());
+        std::vector<double> y_vec(y.data(), y.data() + y.size());
+
         double x_min = *std::min_element(x_vec.begin(), x_vec.end());
         double x_max = *std::max_element(x_vec.begin(), x_vec.end());
         double y_min = *std::min_element(y_vec.begin(), y_vec.end());
         double y_max = *std::max_element(y_vec.begin(), y_vec.end());
-        cv::Mat image = cv::Mat::zeros(500, 800, CV_8UC3);  // 创建一个空白图像
+        cv::Mat image = cv::Mat::zeros(500, 800, CV_8UC3);
         image.setTo(cv::Scalar(255, 255, 255));
         for (size_t i = 0; i < u_vec.size(); ++i) {
             int x = static_cast<int>((u_vec[i] - x_min) / (x_max - x_min) *

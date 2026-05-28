@@ -72,7 +72,7 @@ public:
             const double probability = 0.99999999);
 
     // use bspline to fit a curve
-    Eigen::VectorXd fit_a_curve(std::vector<Eigen::Vector2d> control_pts,
+    Eigen::VectorXd fit_a_curve(const std::vector<Eigen::Vector2d>& control_pts,
                                 int sampled_pts,
                                 int plot_id = 0,
                                 bool debug_mode = true);
@@ -85,7 +85,7 @@ public:
             bool debug_mode = true);
 
     std::vector<Eigen::Vector2d> resample_a_curve(
-            std::vector<Eigen::Vector2d> control_pts,
+            const std::vector<Eigen::Vector2d>& control_pts,
             int sampled_pts,
             int plot_id = 0,
             bool debug_mode = true);

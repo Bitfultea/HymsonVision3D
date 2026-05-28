@@ -64,6 +64,12 @@ public:
                                    double& step_width,
                                    std::vector<std::vector<double>>& temp_res,
                                    bool LHT);
+#ifdef HYMSON3D_TESTING
+    static std::vector<std::vector<Eigen::Vector2d>>
+    test_group_by_derivative_dll(std::vector<Eigen::Vector2d>& sampled_pts);
+    static std::vector<double> test_group_line_slopes(
+            std::vector<Eigen::Vector2d>& sampled_pts);
+#endif
 
 private:
     static void detect_gap_step_dll_plot2_impl(

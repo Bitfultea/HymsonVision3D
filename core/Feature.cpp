@@ -162,40 +162,47 @@ std::pair<bool, cv::Point2f> detect_deep_ring(const geometry::PointCloud& cloud,
                                               float z_gap,
                                               int central_area,
                                               bool debug_mode) {
+    if (cloud.points_.empty()) {
+        return {false, cv::Point2f(0, 0)};
+    }
+
     Eigen::Vector3d min_bound = cloud.GetMinBound();
     Eigen::Vector3d max_bound = cloud.GetMaxBound();
     float total_z = max_bound[2] - min_bound[2];
-    int z_slice_num = total_z / z_gap;
-    std::vector<std::vector<Eigen::Vector3d>> z_slices_point(z_slice_num);
-    // std::vector<float> slices_average_z(z_slice_num);
-    std::cout << " 0 z_slice_num: " << z_slice_num << std::endl;
 
-    for (int i = 0; i < cloud.points_.size(); i++) {
-        int z_slice_idx = std::min(
-                static_cast<int>((cloud.points_[i][2] - min_bound[2]) / z_gap),
-                z_slice_num - 1);
-        // std::cout << "z_slice_idx: " << z_slice_idx << std::endl;
-        z_slices_point[z_slice_idx].push_back(cloud.points_[i]);
+    if (total_z <= 0 || z_gap <= 0) {
+        return {false, cv::Point2f(0, 0)};
     }
 
-    std::cout << "z_slice_num: " << z_slice_num << std::endl;
-    std::vector<std::vector<Eigen::Vector3d>> z_slices_selected;
+    int z_slice_num = static_cast<int>(total_z / z_gap);
+    if (z_slice_num < 1) z_slice_num = 1;
+
+    std::vector<std::vector<Eigen::Vector3d>> z_slices_point(z_slice_num);
+
+    for (const auto& p : cloud.points_) {
+        float rel_z = p[2] - min_bound[2];
+        if (rel_z < 0) rel_z = 0;
+        int z_slice_idx = std::min(static_cast<int>(rel_z / z_gap), z_slice_num - 1);
+        z_slices_point[z_slice_idx].push_back(p);
+    }
+
+    // 找点数足够的最低层（底部）
     for (int i = 0; i < z_slice_num; i++) {
-        if (z_slices_point[i].size() > central_area) {
-            z_slices_selected.push_back(z_slices_point[i]);
+        if (static_cast<int>(z_slices_point[i].size()) > central_area) {
+            float central_x = 0, central_y = 0;
+            for (const auto& p : z_slices_point[i]) {
+                central_x += p[0];
+                central_y += p[1];
+            }
+            central_x /= z_slices_point[i].size();
+            central_y /= z_slices_point[i].size();
+            LOG_INFO("底面中心坐标: ({}, {})", central_x, central_y);
+            return {true, cv::Point2f(central_x, central_y)};
         }
     }
-    std::cout << "z_slices_selected: " << z_slices_selected.size() << std::endl;
 
-    float central_x, central_y;
-    for (int i = 0; i < z_slices_selected.back().size(); i++) {
-        central_x += z_slices_selected.back()[i][0];
-        central_y += z_slices_selected.back()[i][1];
-    }
-    central_x /= z_slices_selected.back().size();
-    central_y /= z_slices_selected.back().size();
-
-    return {true, cv::Point2f(central_x, central_y)};
+    LOG_WARN("未找到符合条件的底面切片");
+    return {false, cv::Point2f(0, 0)};
 }
 }  // namespace feature
 }  // namespace core

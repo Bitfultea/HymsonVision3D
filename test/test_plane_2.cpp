@@ -36,16 +36,15 @@ int main(int argc, char** argv) {
     core::PointCloudRaster raster;
     std::cout << "type of tiff_image:" << tiff_image.type() << std::endl;
     cv::Mat pre_processed = raster.project_to_feature_frame(tiff_image);
+    std::pair<bool, cv::Point2f> disk_centre =
+            core::feature::detect_green_ring(pre_processed, debug_mode);
     //     std::pair<bool, cv::Point2f> disk_centre =
-    //             core::feature::detect_green_ring(pre_processed, debug_mode);
-    //std::pair<bool, cv::Point2f> disk_centre = core::feature::detect_deep_ring(
-    //        *pointcloud, 10.0, 50000, debug_mode);
-    std::pair<bool, cv::Point2f> disk_centre = {true, cv::Point2f(354, 304)};
-
+    //     core::feature::detect_deep_ring(
+    //             *pointcloud, 10.0, 50000, debug_mode);
 
     if (detect_mode == 2) {
         float radius = 5.0f;
-        float normal_degree = 1;
+        float normal_degree = 2;
         float curvature_threshold = 0.0;
         bool use_curvature = false;
         float central_plane_size = 100.0;

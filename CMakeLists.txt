@@ -1,5 +1,4 @@
 cmake_minimum_required( VERSION 3.10 )
-# ���� Windows ƽ̨ȫ�ֽ��� fmt �ı����ڼ��
 if (WIN32)
   set(CMAKE_TOOLCHAIN_FILE "E:/vcpkg/scripts/buildsystems/vcpkg.cmake")
   add_compile_definitions(FMT_ENFORCE_COMPILE_CHECK=0)
@@ -14,6 +13,7 @@ else()
 endif()
 
 if(NOT WIN32)
+  # set(CMAKE_PREFIX_PATH "/usr;/usr/local;${CMAKE_PREFIX_PATH}")
   set(CMAKE_CUDA_ARCHITECTURES "86") # rtx 3090
   set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
 else ()
