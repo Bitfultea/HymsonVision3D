@@ -160,6 +160,16 @@ static int run_self_test(const char* debug_dir) {
         for (const auto& pt : pts) sum += pt.y();
         return sum / static_cast<double>(pts.size());
     };
+    auto endpoint_slope = [](const std::vector<Eigen::Vector2d>& pts) {
+        auto [min_it, max_it] = std::minmax_element(
+                pts.begin(), pts.end(),
+                [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                    return a.x() < b.x();
+                });
+        const double dx = max_it->x() - min_it->x();
+        return std::abs(dx) < 1e-12 ? 0.0
+                                    : (max_it->y() - min_it->y()) / dx;
+    };
     const double dy = std::abs(mean_y(groups[0]) - mean_y(groups[1]));
     if (dy > 1e-6) {
         std::cerr << "expected equal-height left/right surfaces, got dy=" << dy
@@ -308,6 +318,121 @@ static int run_self_test(const char* debug_dir) {
         std::cerr << "right support should reject valley short plane, got x=["
                   << right_min_it->x() << ", " << right_max_it->x() << "]"
                   << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> u_shape_pts;
+    u_shape_pts.reserve(160);
+    for (int x = 0; x <= 100; ++x) {
+        u_shape_pts.emplace_back(static_cast<double>(x), 10.0 - 0.03 * x);
+    }
+    for (int k = 0; k < 12; ++k) {
+        u_shape_pts.emplace_back(104.0 + 0.05 * k, 7.0 - 5.0 * k);
+    }
+    for (int x = 122; x <= 126; ++x) {
+        const double d = static_cast<double>(x - 130);
+        u_shape_pts.emplace_back(static_cast<double>(x), -62.0 + 0.22 * d * d);
+    }
+    for (int x = 127; x <= 133; ++x) {
+        const double d = static_cast<double>(x - 130);
+        u_shape_pts.emplace_back(static_cast<double>(x), -62.0 + 0.22 * d * d);
+    }
+    for (int x = 134; x <= 160; ++x) {
+        u_shape_pts.emplace_back(static_cast<double>(x),
+                                 -48.0 + 0.03 * (x - 134));
+    }
+    auto u_shape_groups =
+            pipeline::GapStepDetection::test_filtered_groups_dll(u_shape_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_u_shape_bridge.png",
+                              u_shape_pts, u_shape_groups);
+    }
+    if (u_shape_groups.size() != 2 || u_shape_groups[1].empty()) {
+        std::cerr << "expected right support after U-shaped valley"
+                  << std::endl;
+        return 1;
+    }
+    auto [u_right_min_it, u_right_max_it] = std::minmax_element(
+            u_shape_groups[1].begin(), u_shape_groups[1].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    if (u_right_min_it->x() < 134.0 || u_right_max_it->x() < 155.0) {
+        std::cerr << "right support should not bridge across U-shaped valley, "
+                     "got x=["
+                  << u_right_min_it->x() << ", " << u_right_max_it->x() << "]"
+                  << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> real_like_u_pts;
+    real_like_u_pts.reserve(500);
+    for (int x = 0; x <= 420; ++x) {
+        real_like_u_pts.emplace_back(static_cast<double>(x),
+                                     -3344.0 - 0.11 * x);
+    }
+    for (int x = 421; x <= 430; ++x) {
+        const double t = static_cast<double>(x - 421) / 9.0;
+        real_like_u_pts.emplace_back(static_cast<double>(x),
+                                     -3390.0 * (1.0 - t) + -3584.0 * t);
+    }
+    for (int x = 431; x <= 439; ++x) {
+        const double d = static_cast<double>(x - 439);
+        real_like_u_pts.emplace_back(static_cast<double>(x),
+                                     -3590.0 + 0.08 * d * d);
+    }
+    for (int x = 440; x <= 460; ++x) {
+        real_like_u_pts.emplace_back(static_cast<double>(x),
+                                     -3590.0 + 1.35 * (x - 440));
+    }
+    for (int x = 461; x <= 475; ++x) {
+        real_like_u_pts.emplace_back(static_cast<double>(x),
+                                     -3562.0 - 0.18 * (x - 461));
+    }
+    auto real_like_groups =
+            pipeline::GapStepDetection::test_filtered_groups_dll(
+                    real_like_u_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_real_like_u.png",
+                              real_like_u_pts, real_like_groups);
+    }
+    if (real_like_groups.size() != 2 || real_like_groups[1].empty()) {
+        std::cerr << "expected right support on real-like U-shaped slice"
+                  << std::endl;
+        return 1;
+    }
+    auto [real_right_min_it, real_right_max_it] = std::minmax_element(
+            real_like_groups[1].begin(), real_like_groups[1].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    if (real_right_min_it->x() < 455.0 || real_right_max_it->x() < 468.0) {
+        std::cerr << "real-like right support should use the top platform, "
+                     "got x=["
+                  << real_right_min_it->x() << ", "
+                  << real_right_max_it->x() << "]" << std::endl;
+        return 1;
+    }
+    const double real_right_slope = endpoint_slope(real_like_groups[1]);
+    if (std::abs(real_right_slope) > 1.0) {
+        std::cerr << "real-like right support should be a flat platform, "
+                     "slope="
+                  << real_right_slope << std::endl;
+        return 1;
+    }
+
+    std::string mark_debug_dir =
+            debug_dir ? std::string(debug_dir)
+                      : utility::filesystem::GetTempDirectoryPath();
+    if (!mark_debug_dir.empty() && mark_debug_dir.back() != '/')
+        mark_debug_dir += "/";
+    mark_debug_dir += "self_test_mark_rejected/";
+    if (pipeline::GapStepDetection::test_mark_rejected_debug_images(
+                mark_debug_dir) != 0) {
         return 1;
     }
 

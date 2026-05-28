@@ -2,9 +2,13 @@
 
 #include <math.h>
 
-#include <cmath>
+#include <cctype>
+#include <cstdio>
 #include <fstream>
+#include <iomanip>
+#include <map>
 #include <opencv2/opencv.hpp>
+#include <sstream>
 
 #include "Converter.h"
 #include "Curvature.h"
@@ -19,6 +23,8 @@ namespace pipeline {
 namespace {
 constexpr double kMinSurfaceSlopeLimit = 0.35;
 constexpr double kMaxSurfaceSlopeLimit = 20.0;
+constexpr double kMaxPlatformSlopeLimit = 35.0;
+constexpr double kMinStableSurfaceSpan = 6.0;
 constexpr int kMaxSurfaceGap = 2;
 constexpr size_t kMinSurfacePoints = 4;
 
@@ -63,6 +69,14 @@ struct SliceMeasurement {
 
 using SliceLineSegments =
         std::vector<std::pair<Eigen::Vector2d, Eigen::Vector2d>>;
+
+std::vector<Eigen::Vector2d> filter_surface_group(
+        const std::vector<Eigen::Vector2d>& points,
+        bool prefer_stable_subsegment);
+std::vector<SurfaceCandidate> collect_surface_candidates(
+        const std::vector<Eigen::Vector2d>& sampled_pts);
+std::vector<Eigen::Vector2d> select_right_platform_surface(
+        const std::vector<Eigen::Vector2d>& points);
 
 std::pair<Eigen::Vector2d, Eigen::Vector2d> invalid_corner() {
     const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -150,6 +164,19 @@ double line_slope(const std::pair<Eigen::Vector2d, Eigen::Vector2d>& line) {
     return (line.second.y() - line.first.y()) / dx;
 }
 
+double median_positive_x_step(const std::vector<Eigen::Vector2d>& pts) {
+    std::vector<double> x_steps;
+    x_steps.reserve(pts.size());
+    for (int i = 0; i < pts.size() - 1; ++i) {
+        const double dx = pts[i + 1].x() - pts[i].x();
+        if (dx > 1e-12) x_steps.push_back(dx);
+    }
+    if (x_steps.empty()) return 0.0;
+    std::nth_element(x_steps.begin(), x_steps.begin() + x_steps.size() / 2,
+                     x_steps.end());
+    return x_steps[x_steps.size() / 2];
+}
+
 double estimate_surface_slope_limit(const std::vector<Eigen::Vector2d>& pts) {
     std::vector<double> slopes;
     slopes.reserve(pts.size());
@@ -197,10 +224,20 @@ std::vector<Eigen::Vector2d> expand_surface_around_candidate(
     const double seed_slope = std::abs(line_slope(seed.line));
     const double residual_limit = std::max(0.5, seed.rms * 3.0);
     const double x_expand_limit = std::max(seed.span, 1.0);
+    std::vector<Eigen::Vector2d> sorted_region = region;
+    std::sort(sorted_region.begin(), sorted_region.end(),
+              [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                  if (a.x() == b.x()) return a.y() < b.y();
+                  return a.x() < b.x();
+              });
+    const double median_x_step = median_positive_x_step(sorted_region);
+    const double x_gap_limit = median_x_step > 0.0
+                                       ? std::max(2.5 * median_x_step, 1e-9)
+                                       : std::numeric_limits<double>::max();
     std::vector<Eigen::Vector2d> expanded;
-    expanded.reserve(region.size());
+    expanded.reserve(sorted_region.size());
 
-    for (const auto& pt : region) {
+    for (const auto& pt : sorted_region) {
         const double residual =
                 std::abs(pt.y() - line_y_at_x(seed.line, pt.x()));
         if (residual > residual_limit) continue;
@@ -211,6 +248,45 @@ std::vector<Eigen::Vector2d> expand_surface_around_candidate(
                         : (pt.x() > seed.x_max ? pt.x() - seed.x_max : 0.0);
         if (dx_to_seed > x_expand_limit) continue;
         expanded.push_back(pt);
+    }
+
+    if (expanded.size() < seed.points.size()) return seed.points;
+
+    std::vector<std::vector<Eigen::Vector2d>> components;
+    std::vector<Eigen::Vector2d> component;
+    for (int i = 0; i < expanded.size(); ++i) {
+        if (i > 0 && expanded[i].x() - expanded[i - 1].x() > x_gap_limit) {
+            if (!component.empty()) components.push_back(component);
+            component.clear();
+        }
+        component.push_back(expanded[i]);
+    }
+    if (!component.empty()) components.push_back(component);
+    if (components.size() > 1) {
+        auto best_component = std::max_element(
+                components.begin(), components.end(),
+                [&seed](const std::vector<Eigen::Vector2d>& a,
+                        const std::vector<Eigen::Vector2d>& b) {
+                    auto overlap_score =
+                            [&seed](const std::vector<Eigen::Vector2d>& c) {
+                                if (c.empty())
+                                    return -std::numeric_limits<double>::max();
+                                auto [min_it, max_it] = std::minmax_element(
+                                        c.begin(), c.end(),
+                                        [](const Eigen::Vector2d& p,
+                                           const Eigen::Vector2d& q) {
+                                            return p.x() < q.x();
+                                        });
+                                const double overlap = std::max(
+                                        0.0, std::min(max_it->x(), seed.x_max) -
+                                                     std::max(min_it->x(),
+                                                              seed.x_min));
+                                return overlap +
+                                       0.01 * (max_it->x() - min_it->x());
+                            };
+                    return overlap_score(a) < overlap_score(b);
+                });
+        if (best_component != components.end()) expanded = *best_component;
     }
 
     if (expanded.size() < seed.points.size()) return seed.points;
@@ -295,6 +371,60 @@ RightSurfaceSearch build_right_surface_search(
     }
 
     return search;
+}
+
+std::vector<Eigen::Vector2d> collect_adjacent_right_surface(
+        const std::vector<Eigen::Vector2d>& right_region) {
+    if (right_region.size() < kMinSurfacePoints) return {};
+
+    std::vector<Eigen::Vector2d> pts = right_region;
+    std::sort(pts.begin(), pts.end(),
+              [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                  if (a.x() == b.x()) return a.y() < b.y();
+                  return a.x() < b.x();
+              });
+
+    std::vector<double> abs_slopes;
+    abs_slopes.reserve(pts.size());
+    for (int i = 0; i < pts.size() - 1; ++i) {
+        const double dx = pts[i + 1].x() - pts[i].x();
+        if (std::abs(dx) < 1e-12) continue;
+        abs_slopes.push_back(std::abs((pts[i + 1].y() - pts[i].y()) / dx));
+    }
+    if (abs_slopes.empty()) return {};
+    std::nth_element(abs_slopes.begin(),
+                     abs_slopes.begin() + abs_slopes.size() / 2,
+                     abs_slopes.end());
+    const double vertical_slope_threshold =
+            std::max(kMinSurfaceSlopeLimit * 5.0,
+                     abs_slopes[abs_slopes.size() / 2] * 8.0);
+
+    std::vector<Eigen::Vector2d> adjacent;
+    adjacent.push_back(pts.front());
+    for (int i = 0; i < pts.size() - 1; ++i) {
+        const double dx = pts[i + 1].x() - pts[i].x();
+        if (std::abs(dx) < 1e-12) break;
+        const double slope = std::abs((pts[i + 1].y() - pts[i].y()) / dx);
+        if (slope >= vertical_slope_threshold &&
+            adjacent.size() >= kMinSurfacePoints) {
+            break;
+        }
+        adjacent.push_back(pts[i + 1]);
+    }
+
+    if (adjacent.size() < kMinSurfacePoints) return {};
+
+    auto candidates = collect_surface_candidates(adjacent);
+    if (candidates.empty()) return {};
+
+    auto best_it = std::min_element(
+            candidates.begin(), candidates.end(),
+            [](const SurfaceCandidate& a, const SurfaceCandidate& b) {
+                if (a.x_min == b.x_min) return a.span > b.span;
+                return a.x_min < b.x_min;
+            });
+    return best_it != candidates.end() ? best_it->points
+                                       : std::vector<Eigen::Vector2d>{};
 }
 
 void draw_line_on_plot(cv::Mat& image,
@@ -533,6 +663,65 @@ void write_slice_measurements_csv(
     }
 }
 
+std::string sanitize_filename_token(const std::string& text) {
+    std::string token;
+    token.reserve(text.size());
+    for (unsigned char ch : text) {
+        if (std::isalnum(ch) || ch == '_' || ch == '-') {
+            token.push_back(static_cast<char>(ch));
+        } else {
+            token.push_back('_');
+        }
+    }
+    return token.empty() ? "rejected" : token;
+}
+
+void remove_stale_rejected_debug_images(const std::string& path, int index) {
+    std::vector<std::string> filenames;
+    if (!utility::filesystem::ListFilesInDirectory(path, filenames)) return;
+
+    const std::string prefix =
+            path + "group_pts" + std::to_string(index) + "__REJECTED_";
+    const std::string suffix = ".jpg";
+    for (const auto& filename : filenames) {
+        if (filename.size() < prefix.size() + suffix.size()) continue;
+        if (filename.compare(0, prefix.size(), prefix) != 0) continue;
+        if (filename.compare(filename.size() - suffix.size(), suffix.size(),
+                             suffix) != 0) {
+            continue;
+        }
+        utility::filesystem::RemoveFile(filename);
+    }
+}
+
+void mark_rejected_debug_images(
+        const std::string& debug_path,
+        const std::vector<SliceMeasurement>& measurements) {
+    if (debug_path.empty()) return;
+
+    std::string path = debug_path;
+    if (path.back() != '/' && path.back() != '\\') path += "/";
+
+    for (const auto& measurement : measurements) {
+        remove_stale_rejected_debug_images(path, measurement.index);
+        if (measurement.accepted) continue;
+
+        const std::string src =
+                path + "group_pts" + std::to_string(measurement.index) + ".jpg";
+        if (!utility::filesystem::FileExists(src)) continue;
+
+        const std::string reason =
+                sanitize_filename_token(measurement.reject_reason);
+        const std::string dst = path + "group_pts" +
+                                std::to_string(measurement.index) +
+                                "__REJECTED_" + reason + ".jpg";
+        if (utility::filesystem::FileExists(dst)) {
+            utility::filesystem::RemoveFile(dst);
+        }
+        std::rename(src.c_str(), dst.c_str());
+    }
+}
+
 std::vector<std::vector<Eigen::Vector2d>> select_surface_groups(
         std::vector<SurfaceCandidate>& candidates) {
     if (candidates.size() < 2) return {};
@@ -596,7 +785,13 @@ std::vector<SurfaceCandidate> collect_surface_candidates(
     int unstable_gap = 0;
     const double slope_limit = estimate_surface_slope_limit(pts);
     const double slope_delta_limit =
-            std::max(kMinSurfaceSlopeLimit, slope_limit * 1.5);
+            std::max(kMinSurfaceSlopeLimit, std::min(slope_limit * 1.5, 0.8));
+    const double median_x_step = median_positive_x_step(pts);
+    const double x_gap_limit = median_x_step > 0.0
+                                       ? std::max(2.5 * median_x_step, 1e-9)
+                                       : std::numeric_limits<double>::max();
+    const double min_surface_span =
+            std::max(kMinStableSurfaceSpan, 6.0 * median_x_step);
 
     auto flush_segment = [&]() {
         if (segment.size() >= kMinSurfacePoints) {
@@ -604,7 +799,7 @@ std::vector<SurfaceCandidate> collect_surface_candidates(
             const double slope = std::abs(line_slope(candidate.line));
             const double rms_limit =
                     std::max(0.2, candidate.span * slope_limit * 0.05);
-            if (candidate.span > 0.0 && slope <= slope_limit &&
+            if (candidate.span >= min_surface_span && slope <= slope_limit &&
                 candidate.rms <= rms_limit) {
                 candidates.push_back(candidate);
             }
@@ -617,6 +812,11 @@ std::vector<SurfaceCandidate> collect_surface_candidates(
     for (int i = 0; i < pts.size() - 1; ++i) {
         const double dx = pts[i + 1].x() - pts[i].x();
         if (std::abs(dx) < 1e-12) {
+            flush_segment();
+            continue;
+        }
+        if (dx > x_gap_limit) {
+            if (segment.empty()) segment.push_back(pts[i]);
             flush_segment();
             continue;
         }
@@ -641,6 +841,91 @@ std::vector<SurfaceCandidate> collect_surface_candidates(
     flush_segment();
 
     return candidates;
+}
+
+std::vector<SurfaceCandidate> collect_platform_candidates(
+        const std::vector<Eigen::Vector2d>& sampled_pts) {
+    if (sampled_pts.size() < kMinSurfacePoints) return {};
+
+    std::vector<Eigen::Vector2d> pts = sampled_pts;
+    std::sort(pts.begin(), pts.end(),
+              [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                  if (a.x() == b.x()) return a.y() < b.y();
+                  return a.x() < b.x();
+              });
+
+    const double median_x_step = median_positive_x_step(pts);
+    const double x_gap_limit = median_x_step > 0.0
+                                       ? std::max(2.5 * median_x_step, 1e-9)
+                                       : std::numeric_limits<double>::max();
+    const double min_span =
+            std::max(kMinStableSurfaceSpan, 6.0 * median_x_step);
+    const double max_span = std::max(30.0, min_span * 6.0);
+
+    std::vector<SurfaceCandidate> candidates;
+    for (int start = 0; start < pts.size(); ++start) {
+        for (int end = start + static_cast<int>(kMinSurfacePoints) - 1;
+             end < pts.size(); ++end) {
+            if (end > start && pts[end].x() - pts[end - 1].x() > x_gap_limit)
+                break;
+
+            const double span = pts[end].x() - pts[start].x();
+            if (span < min_span) continue;
+            if (span > max_span) break;
+
+            std::vector<Eigen::Vector2d> window(pts.begin() + start,
+                                                pts.begin() + end + 1);
+            auto candidate = make_surface_candidate(window);
+            const double slope = std::abs(line_slope(candidate.line));
+            const double roughness =
+                    candidate.rms / std::max(candidate.span, 1e-9);
+            if (slope > kMaxPlatformSlopeLimit) continue;
+            if (roughness > 35.0) continue;
+            candidates.push_back(candidate);
+        }
+    }
+    return candidates;
+}
+
+std::vector<Eigen::Vector2d> select_right_platform_surface(
+        const std::vector<Eigen::Vector2d>& points) {
+    auto candidates = collect_platform_candidates(points);
+    if (candidates.empty()) return {};
+
+    auto [x_min_it, x_max_it] = std::minmax_element(
+            points.begin(), points.end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    auto [y_min_it, y_max_it] = std::minmax_element(
+            points.begin(), points.end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.y() < b.y();
+            });
+    const double x_span = std::max(x_max_it->x() - x_min_it->x(), 1e-9);
+    const double y_span = std::max(y_max_it->y() - y_min_it->y(), 1e-9);
+
+    auto best_it = std::max_element(
+            candidates.begin(), candidates.end(),
+            [&](const SurfaceCandidate& a, const SurfaceCandidate& b) {
+                auto score = [&](const SurfaceCandidate& candidate) {
+                    const double slope = std::abs(line_slope(candidate.line));
+                    const double roughness =
+                            candidate.rms / std::max(candidate.span, 1e-9);
+                    const double x_norm =
+                            (candidate.x_center - x_min_it->x()) / x_span;
+                    const double y_norm =
+                            (candidate.y_center - y_min_it->y()) / y_span;
+                    const double span_score =
+                            4.0 * std::min(candidate.span, 12.0);
+                    return span_score + 18.0 * x_norm + 20.0 * y_norm -
+                           5.0 * slope - roughness;
+                };
+                return score(a) < score(b);
+            });
+
+    return best_it != candidates.end() ? best_it->points
+                                       : std::vector<Eigen::Vector2d>{};
 }
 
 std::vector<std::vector<Eigen::Vector2d>> split_by_step_edge(
@@ -716,36 +1001,7 @@ std::vector<std::vector<Eigen::Vector2d>> split_by_step_edge(
     const auto& right_candidates_region = right_search.search_region.empty()
                                                   ? right_region
                                                   : right_search.search_region;
-    auto right_candidates = collect_surface_candidates(right_candidates_region);
-    if (right_candidates.empty()) {
-        return {left_region, right_candidates_region};
-    }
-
-    auto right_it = std::max_element(
-            right_candidates.begin(), right_candidates.end(),
-            [&right_search](const SurfaceCandidate& a,
-                            const SurfaceCandidate& b) {
-                auto score = [&right_search](
-                                     const SurfaceCandidate& candidate) {
-                    const double edge_distance = std::max(
-                            0.0, candidate.x_min - right_search.edge_x);
-                    const double valley_distance = std::abs(
-                            candidate.x_center - right_search.valley_x);
-                    const double valley_penalty =
-                            valley_distance < std::max(candidate.span, 1.0)
-                                    ? 1000.0
-                                    : 0.0;
-                    return candidate.span - 5.0 * candidate.rms -
-                           3.0 * std::abs(line_slope(candidate.line)) -
-                           0.02 * edge_distance - valley_penalty;
-                };
-                return score(a) < score(b);
-            });
-    if (right_it == right_candidates.end())
-        return {left_region, right_candidates_region};
-
-    return {left_region, expand_surface_around_candidate(
-                                 right_candidates_region, *right_it)};
+    return {left_region, right_candidates_region};
 }
 
 std::vector<Eigen::Vector2d> filter_surface_group(
@@ -753,9 +1009,15 @@ std::vector<Eigen::Vector2d> filter_surface_group(
         bool prefer_stable_subsegment) {
     if (points.size() < 8) return points;
 
+    std::vector<Eigen::Vector2d> base_points = points;
     if (prefer_stable_subsegment) {
+        auto platform = select_right_platform_surface(points);
+        if (platform.size() >= kMinSurfacePoints) return platform;
+
         auto candidates = collect_surface_candidates(points);
-        if (!candidates.empty()) {
+        if (candidates.empty()) {
+            return {};
+        } else {
             auto best_it = std::max_element(
                     candidates.begin(), candidates.end(),
                     [](const SurfaceCandidate& a, const SurfaceCandidate& b) {
@@ -769,26 +1031,39 @@ std::vector<Eigen::Vector2d> filter_surface_group(
             if (best_it->points.size() >= kMinSurfacePoints) {
                 return best_it->points;
             }
+            return {};
         }
     }
 
-    const auto line = fit_line_segment_robust(points);
+    const auto line = fit_line_segment_robust(base_points);
     double sum_sq_residual = 0.0;
-    for (const auto& pt : points) {
+    for (const auto& pt : base_points) {
         const double residual = pt.y() - line_y_at_x(line, pt.x());
         sum_sq_residual += residual * residual;
     }
-    const double rms =
-            std::sqrt(sum_sq_residual / static_cast<double>(points.size()));
-    const double threshold = std::max(3.0 * rms, 0.03);
+    const double rms = std::sqrt(sum_sq_residual /
+                                 static_cast<double>(base_points.size()));
+    double threshold = std::max(3.0 * rms, 0.03);
+    if (prefer_stable_subsegment &&
+        base_points.size() >= 2 * kMinSurfacePoints) {
+        std::vector<double> residuals;
+        residuals.reserve(base_points.size());
+        for (const auto& pt : base_points) {
+            residuals.push_back(std::abs(pt.y() - line_y_at_x(line, pt.x())));
+        }
+        std::sort(residuals.begin(), residuals.end());
+        const size_t keep_count =
+                std::max<size_t>(kMinSurfacePoints, residuals.size() * 6 / 10);
+        threshold = std::min(threshold, residuals[keep_count - 1]);
+    }
 
     std::vector<Eigen::Vector2d> filtered;
-    filtered.reserve(points.size());
-    for (const auto& pt : points) {
+    filtered.reserve(base_points.size());
+    for (const auto& pt : base_points) {
         const double residual = std::abs(pt.y() - line_y_at_x(line, pt.x()));
         if (residual <= threshold) filtered.push_back(pt);
     }
-    return filtered.size() >= kMinSurfacePoints ? filtered : points;
+    return filtered.size() >= kMinSurfacePoints ? filtered : base_points;
 }
 
 std::vector<std::vector<Eigen::Vector2d>> extract_surface_candidates(
@@ -858,6 +1133,304 @@ struct RobustPlaneResult {
 
 double plane_z_at(const Eigen::Vector3d& coeff, double x, double y) {
     return coeff(0) * x + coeff(1) * y + coeff(2);
+}
+
+std::string format_double(double value, int precision = 3) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str();
+}
+
+void draw_final_measurement_summary(
+        const std::string& output_path,
+        const std::vector<SliceMeasurement>& measurements) {
+    if (measurements.empty()) return;
+
+    std::vector<double> accepted_widths;
+    std::vector<double> accepted_heights;
+    std::map<std::string, int> reject_counts;
+    for (const auto& measurement : measurements) {
+        if (measurement.accepted) {
+            accepted_widths.push_back(measurement.width);
+            accepted_heights.push_back(measurement.height);
+        } else {
+            reject_counts[measurement.reject_reason.empty()
+                                  ? "unknown"
+                                  : measurement.reject_reason]++;
+        }
+    }
+
+    const double final_width = trimmed_mean(accepted_widths);
+    const double final_height = trimmed_mean(accepted_heights);
+    const int accepted_count = static_cast<int>(accepted_widths.size());
+    const int total_count = static_cast<int>(measurements.size());
+
+    cv::Mat image(900, 1200, CV_8UC3, cv::Scalar(255, 255, 255));
+    const cv::Scalar text_color(30, 30, 30);
+    cv::putText(image, "Final measurement summary", cv::Point(24, 36),
+                cv::FONT_HERSHEY_SIMPLEX, 0.9, text_color, 2, cv::LINE_AA);
+    cv::putText(image,
+                "accepted: " + std::to_string(accepted_count) + " / " +
+                        std::to_string(total_count),
+                cv::Point(24, 70), cv::FONT_HERSHEY_SIMPLEX, 0.58, text_color,
+                1, cv::LINE_AA);
+    cv::putText(image, "step_width: " + format_double(final_width),
+                cv::Point(260, 70), cv::FONT_HERSHEY_SIMPLEX, 0.58, text_color,
+                1, cv::LINE_AA);
+    cv::putText(image, "gap_step: " + format_double(final_height),
+                cv::Point(500, 70), cv::FONT_HERSHEY_SIMPLEX, 0.58, text_color,
+                1, cv::LINE_AA);
+    cv::putText(image, "green=used  red=rejected  purple=height  black=width",
+                cv::Point(760, 70), cv::FONT_HERSHEY_SIMPLEX, 0.48,
+                cv::Scalar(80, 80, 80), 1, cv::LINE_AA);
+
+    int reason_y = 100;
+    for (const auto& [reason, count] : reject_counts) {
+        cv::putText(image, reason + ": " + std::to_string(count),
+                    cv::Point(24, reason_y), cv::FONT_HERSHEY_SIMPLEX, 0.45,
+                    cv::Scalar(80, 80, 80), 1, cv::LINE_AA);
+        reason_y += 20;
+        if (reason_y > 160) break;
+    }
+
+    auto draw_chart = [&](const cv::Rect& rect, const std::string& title,
+                          const std::vector<double>& values,
+                          double final_value) {
+        cv::rectangle(image, rect, cv::Scalar(210, 210, 210), 1);
+        cv::putText(image, title, cv::Point(rect.x + 10, rect.y + 24),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color, 1, cv::LINE_AA);
+        if (values.empty() || values.size() != measurements.size()) return;
+
+        double v_min = std::numeric_limits<double>::max();
+        double v_max = -std::numeric_limits<double>::max();
+        for (int i = 0; i < values.size(); ++i) {
+            if (!measurements[i].accepted || !std::isfinite(values[i]))
+                continue;
+            v_min = std::min(v_min, values[i]);
+            v_max = std::max(v_max, values[i]);
+        }
+        if (v_min > v_max) {
+            for (double value : values) {
+                if (!std::isfinite(value)) continue;
+                v_min = std::min(v_min, value);
+                v_max = std::max(v_max, value);
+            }
+        }
+        if (v_min > v_max) return;
+        if (std::abs(v_max - v_min) < 1e-9) {
+            v_max += 1.0;
+            v_min -= 1.0;
+        }
+
+        const int left = rect.x + 44;
+        const int right = rect.x + rect.width - 16;
+        const int top = rect.y + 42;
+        const int bottom = rect.y + rect.height - 30;
+        auto to_point = [&](int i, double value) {
+            const double x_ratio =
+                    static_cast<double>(i) /
+                    static_cast<double>(std::max<int>(1, values.size() - 1));
+            const double y_ratio =
+                    std::clamp((value - v_min) / (v_max - v_min), 0.0, 1.0);
+            return cv::Point(
+                    static_cast<int>(left + x_ratio * (right - left)),
+                    static_cast<int>(bottom - y_ratio * (bottom - top)));
+        };
+
+        cv::line(image, cv::Point(left, bottom), cv::Point(right, bottom),
+                 cv::Scalar(230, 230, 230), 1);
+        cv::line(image, cv::Point(left, top), cv::Point(left, bottom),
+                 cv::Scalar(230, 230, 230), 1);
+        cv::putText(image, format_double(v_max, 1),
+                    cv::Point(rect.x + 4, top + 5), cv::FONT_HERSHEY_SIMPLEX,
+                    0.34, cv::Scalar(110, 110, 110), 1, cv::LINE_AA);
+        cv::putText(image, format_double(v_min, 1),
+                    cv::Point(rect.x + 4, bottom + 5), cv::FONT_HERSHEY_SIMPLEX,
+                    0.34, cv::Scalar(110, 110, 110), 1, cv::LINE_AA);
+
+        if (std::isfinite(final_value)) {
+            const cv::Point mean_left = to_point(0, final_value);
+            const cv::Point mean_right =
+                    to_point(static_cast<int>(values.size() - 1), final_value);
+            cv::line(image, mean_left, mean_right, cv::Scalar(40, 40, 40), 1,
+                     cv::LINE_AA);
+            cv::putText(image, "final " + format_double(final_value, 2),
+                        cv::Point(rect.x + rect.width - 170, rect.y + 24),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.42, text_color, 1,
+                        cv::LINE_AA);
+        }
+
+        for (int i = 1; i < values.size(); ++i) {
+            if (!measurements[i].accepted || !measurements[i - 1].accepted)
+                continue;
+            if (!std::isfinite(values[i]) || !std::isfinite(values[i - 1]))
+                continue;
+            cv::line(image, to_point(i - 1, values[i - 1]),
+                     to_point(i, values[i]), cv::Scalar(0, 145, 0), 1,
+                     cv::LINE_AA);
+        }
+        for (int i = 0; i < values.size(); ++i) {
+            if (!std::isfinite(values[i])) continue;
+            const cv::Scalar color = measurements[i].accepted
+                                             ? cv::Scalar(0, 145, 0)
+                                             : cv::Scalar(0, 0, 230);
+            cv::circle(image, to_point(i, values[i]),
+                       measurements[i].accepted ? 2 : 3, color, -1,
+                       cv::LINE_AA);
+        }
+    };
+
+    std::vector<double> widths(measurements.size());
+    std::vector<double> heights(measurements.size());
+    for (int i = 0; i < measurements.size(); ++i) {
+        widths[i] = measurements[i].width;
+        heights[i] = measurements[i].height;
+    }
+
+    draw_chart(cv::Rect(24, 180, 552, 245), "width by slice", widths,
+               final_width);
+    draw_chart(cv::Rect(624, 180, 552, 245), "height by slice", heights,
+               final_height);
+
+    const cv::Rect geom_rect(24, 465, 1152, 390);
+    cv::rectangle(image, geom_rect, cv::Scalar(210, 210, 210), 1);
+    cv::putText(image,
+                "Measured geometry from fitted surfaces at accepted boundaries",
+                cv::Point(geom_rect.x + 10, geom_rect.y + 26),
+                cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color, 1, cv::LINE_AA);
+
+    double x_min = std::numeric_limits<double>::max();
+    double x_max = -std::numeric_limits<double>::max();
+    double z_min = std::numeric_limits<double>::max();
+    double z_max = -std::numeric_limits<double>::max();
+    for (const auto& measurement : measurements) {
+        if (!measurement.accepted) continue;
+        x_min = std::min({x_min, measurement.left_boundary.x(),
+                          measurement.right_boundary.x()});
+        x_max = std::max({x_max, measurement.left_boundary.x(),
+                          measurement.right_boundary.x()});
+        z_min = std::min({z_min, measurement.left_boundary.y(),
+                          measurement.right_boundary.y()});
+        z_max = std::max({z_max, measurement.left_boundary.y(),
+                          measurement.right_boundary.y()});
+    }
+
+    if (x_min <= x_max && z_min <= z_max) {
+        if (std::abs(x_max - x_min) < 1e-9) {
+            x_min -= 1.0;
+            x_max += 1.0;
+        }
+        if (std::abs(z_max - z_min) < 1e-9) {
+            z_min -= 1.0;
+            z_max += 1.0;
+        }
+
+        const int left = geom_rect.x + 58;
+        const int right = geom_rect.x + geom_rect.width - 28;
+        const int top = geom_rect.y + 52;
+        const int bottom = geom_rect.y + geom_rect.height - 34;
+        auto geom_point = [&](double x, double z) {
+            const double x_ratio = (x - x_min) / (x_max - x_min);
+            const double z_ratio = (z - z_min) / (z_max - z_min);
+            return cv::Point(
+                    static_cast<int>(left + x_ratio * (right - left)),
+                    static_cast<int>(bottom - z_ratio * (bottom - top)));
+        };
+
+        cv::line(image, cv::Point(left, bottom), cv::Point(right, bottom),
+                 cv::Scalar(230, 230, 230), 1);
+        cv::line(image, cv::Point(left, top), cv::Point(left, bottom),
+                 cv::Scalar(230, 230, 230), 1);
+        cv::putText(image, "x", cv::Point(right - 8, bottom + 22),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.42, cv::Scalar(110, 110, 110),
+                    1, cv::LINE_AA);
+        cv::putText(image, "z", cv::Point(left - 22, top + 6),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.42, cv::Scalar(110, 110, 110),
+                    1, cv::LINE_AA);
+
+        std::vector<cv::Point> left_curve;
+        std::vector<cv::Point> right_curve;
+        int accepted_seen = 0;
+        const int draw_stride = std::max(1, accepted_count / 24);
+        for (const auto& measurement : measurements) {
+            if (!measurement.accepted) continue;
+            const cv::Point left_pt = geom_point(measurement.left_boundary.x(),
+                                                 measurement.left_boundary.y());
+            const cv::Point right_pt =
+                    geom_point(measurement.right_boundary.x(),
+                               measurement.right_boundary.y());
+            left_curve.push_back(left_pt);
+            right_curve.push_back(right_pt);
+
+            if (accepted_seen % draw_stride == 0) {
+                const cv::Point width_right =
+                        geom_point(measurement.right_boundary.x(),
+                                   measurement.left_boundary.y());
+                cv::line(image, left_pt, width_right, cv::Scalar(30, 30, 30), 1,
+                         cv::LINE_AA);
+                cv::line(image, width_right, right_pt, cv::Scalar(160, 40, 160),
+                         1, cv::LINE_AA);
+            }
+            accepted_seen++;
+        }
+
+        for (int i = 1; i < left_curve.size(); ++i) {
+            cv::line(image, left_curve[i - 1], left_curve[i],
+                     cv::Scalar(0, 0, 220), 2, cv::LINE_AA);
+            cv::line(image, right_curve[i - 1], right_curve[i],
+                     cv::Scalar(220, 0, 0), 2, cv::LINE_AA);
+        }
+        for (const auto& pt : left_curve)
+            cv::circle(image, pt, 2, cv::Scalar(0, 0, 220), -1, cv::LINE_AA);
+        for (const auto& pt : right_curve)
+            cv::circle(image, pt, 2, cv::Scalar(220, 0, 0), -1, cv::LINE_AA);
+
+        cv::putText(image, "left fitted surface boundary",
+                    cv::Point(geom_rect.x + 18,
+                              geom_rect.y + geom_rect.height - 14),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.42, cv::Scalar(0, 0, 220), 1,
+                    cv::LINE_AA);
+        cv::putText(image, "right fitted surface boundary",
+                    cv::Point(geom_rect.x + 250,
+                              geom_rect.y + geom_rect.height - 14),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.42, cv::Scalar(220, 0, 0), 1,
+                    cv::LINE_AA);
+        cv::putText(image,
+                    "measurement lines sampled: " +
+                            std::to_string((accepted_count + draw_stride - 1) /
+                                           draw_stride),
+                    cv::Point(geom_rect.x + 520,
+                              geom_rect.y + geom_rect.height - 14),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.42, cv::Scalar(80, 80, 80), 1,
+                    cv::LINE_AA);
+    }
+
+    cv::imwrite(output_path, image);
+}
+
+void write_3d_filter_debug_snapshot(
+        const std::string& debug_path,
+        const std::vector<SliceMeasurement>& measurements) {
+    if (debug_path.empty()) return;
+
+    std::string path = debug_path;
+    if (path.back() != '/' && path.back() != '\\') path += "/";
+    utility::filesystem::MakeDirectoryHierarchy(path);
+
+    std::ofstream ofs(path + "slice_metrics_3d.csv");
+    if (ofs.is_open()) {
+        ofs << "slice,width,height,left_x,right_x,"
+               "left_residual,right_residual,accepted,reject_reason\n";
+        for (const auto& m : measurements) {
+            ofs << m.index << "," << m.width << "," << m.height << ","
+                << m.left_boundary.x() << "," << m.right_boundary.x() << ","
+                << m.left_residual << "," << m.right_residual << ","
+                << (m.accepted ? 1 : 0) << "," << m.reject_reason << "\n";
+        }
+    }
+
+    draw_final_measurement_summary(path + "final_measurement_summary.png",
+                                   measurements);
 }
 
 // Robust plane fit: MAD outlier rejection + one re-fit pass
@@ -930,7 +1503,10 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
         for (const auto& pt : m.right_surface_pts)
             right_pts_3d.emplace_back(pt.x(), y_phys, pt.y());
     }
-    if (left_pts_3d.size() < 6 || right_pts_3d.size() < 6) return measurements;
+    if (left_pts_3d.size() < 6 || right_pts_3d.size() < 6) {
+        write_3d_filter_debug_snapshot(debug_path, measurements);
+        return measurements;
+    }
 
     // Fit planes
     RobustPlaneResult left_plane = robust_plane_fit(left_pts_3d);
@@ -974,7 +1550,10 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
         ws.push_back(m.width);
         hs.push_back(m.height);
     }
-    if (lr.size() < 7) return measurements;
+    if (lr.size() < 7) {
+        write_3d_filter_debug_snapshot(debug_path, measurements);
+        return measurements;
+    }
 
     double lr_m = median_value(lr),
            lr_mad = median_absolute_deviation(lr, lr_m);
@@ -1064,16 +1643,8 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
     if (!debug_path.empty()) {
         std::string path = debug_path;
         if (path.back() != '/' && path.back() != '\\') path += "/";
-        std::ofstream ofs(path + "slice_metrics_3d.csv");
-        if (ofs.is_open()) {
-            ofs << "slice,width,height,left_x,right_x,"
-                   "left_residual,right_residual,accepted,reject_reason\n";
-            for (const auto& m : measurements)
-                ofs << m.index << "," << m.width << "," << m.height << ","
-                    << m.left_boundary.x() << "," << m.right_boundary.x() << ","
-                    << m.left_residual << "," << m.right_residual << ","
-                    << (m.accepted ? 1 : 0) << "," << m.reject_reason << "\n";
-        }
+        utility::filesystem::MakeDirectoryHierarchy(path);
+        write_3d_filter_debug_snapshot(path, measurements);
         // Overview plots: rejected slices as red dots, accepted as green lines
         auto draw_overview = [&](const std::string& fname,
                                  const std::vector<double>& vals) {
@@ -1223,6 +1794,7 @@ void GapStepDetection::detect_gap_step_dll_plot(
                                   &temp_res);
     if (debug_mode) {
         write_slice_measurements_csv(debug_path, measurements);
+        mark_rejected_debug_images(debug_path, measurements);
     }
     // std::cout << "4" << std::endl;
 }
@@ -1302,6 +1874,7 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
 
     if (debug_mode) {
         write_slice_measurements_csv(debug_path, measurements);
+        mark_rejected_debug_images(debug_path, measurements);
     }
 }
 
@@ -2445,6 +3018,14 @@ GapStepDetection::test_group_by_derivative_dll(
     return group_by_derivative_dll(sampled_pts);
 }
 
+std::vector<std::vector<Eigen::Vector2d>>
+GapStepDetection::test_filtered_groups_dll(
+        std::vector<Eigen::Vector2d>& sampled_pts) {
+    auto groups = group_by_derivative_dll(sampled_pts);
+    std::vector<Eigen::Vector2d> limit_pts;
+    return statistics_filter(groups, limit_pts);
+}
+
 std::vector<double> GapStepDetection::test_group_line_slopes(
         std::vector<Eigen::Vector2d>& sampled_pts) {
     std::vector<double> slopes;
@@ -2458,6 +3039,75 @@ std::vector<double> GapStepDetection::test_group_line_slopes(
                                    : (line.second.y() - line.first.y()) / dx);
     }
     return slopes;
+}
+
+int GapStepDetection::test_mark_rejected_debug_images(
+        const std::string& debug_dir) {
+    utility::filesystem::DeleteDirectory(debug_dir);
+    utility::filesystem::MakeDirectoryHierarchy(debug_dir);
+
+    std::string path = debug_dir;
+    if (!path.empty() && path.back() != '/' && path.back() != '\\') path += "/";
+
+    cv::Mat image(16, 16, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::imwrite(path + "group_pts0.jpg", image);
+    cv::imwrite(path + "group_pts1.jpg", image);
+
+    std::vector<SliceMeasurement> measurements(2);
+    measurements[0].index = 0;
+    measurements[0].accepted = true;
+    measurements[1].index = 1;
+    measurements[1].accepted = false;
+    measurements[1].reject_reason = "width_outlier";
+
+    mark_rejected_debug_images(path, measurements);
+
+    const std::string accepted_path = path + "group_pts0.jpg";
+    const std::string rejected_original_path = path + "group_pts1.jpg";
+    const std::string rejected_marked_path =
+            path + "group_pts1__REJECTED_width_outlier.jpg";
+
+    if (!utility::filesystem::FileExists(accepted_path)) {
+        std::cerr << "accepted debug image should keep original name"
+                  << std::endl;
+        return 1;
+    }
+    if (utility::filesystem::FileExists(rejected_original_path)) {
+        std::cerr << "rejected debug image should not keep unmarked name"
+                  << std::endl;
+        return 1;
+    }
+    if (!utility::filesystem::FileExists(rejected_marked_path)) {
+        std::cerr << "rejected debug image should be marked in filename"
+                  << std::endl;
+        return 1;
+    }
+
+    measurements[0].accepted = false;
+    measurements[0].reject_reason = "right_surface_residual_outlier";
+    measurements[1].accepted = true;
+    cv::imwrite(rejected_original_path, image);
+    mark_rejected_debug_images(path, measurements);
+
+    if (utility::filesystem::FileExists(rejected_marked_path)) {
+        std::cerr << "stale rejected marker should be removed when slice is "
+                     "accepted"
+                  << std::endl;
+        return 1;
+    }
+    if (!utility::filesystem::FileExists(rejected_original_path)) {
+        std::cerr << "newly accepted debug image should keep original name"
+                  << std::endl;
+        return 1;
+    }
+    if (!utility::filesystem::FileExists(
+                path +
+                "group_pts0__REJECTED_right_surface_residual_outlier.jpg")) {
+        std::cerr << "newly rejected debug image should be marked" << std::endl;
+        return 1;
+    }
+
+    return 0;
 }
 
 // Test: 3D consistency filter with synthetic slices
@@ -2646,6 +3296,17 @@ int GapStepDetection::test_3d_consistency_filter(const std::string& debug_dir) {
                          "got "
                       << filtered[8].height << std::endl;
             return 1;
+        }
+        if (!debug_dir.empty()) {
+            std::ifstream ifs(
+                    debug_dir +
+                    "/test6_plane_height/final_measurement_summary.png");
+            if (!ifs.good()) {
+                std::cerr << "TEST6 FAIL: final measurement summary image was "
+                             "not written"
+                          << std::endl;
+                return 1;
+            }
         }
     }
 
