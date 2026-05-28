@@ -856,6 +856,10 @@ struct RobustPlaneResult {
     double mad = 0.0;
 };
 
+double plane_z_at(const Eigen::Vector3d& coeff, double x, double y) {
+    return coeff(0) * x + coeff(1) * y + coeff(2);
+}
+
 // Robust plane fit: MAD outlier rejection + one re-fit pass
 RobustPlaneResult robust_plane_fit(const std::vector<Eigen::Vector3d>& pts) {
     RobustPlaneResult result;
@@ -939,18 +943,26 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
         double y_phys = static_cast<double>(m.index) * trans_mat.y();
         double sum_l = 0.0;
         for (const auto& pt : m.left_surface_pts) {
-            double zp = left_plane.coeff(0) * pt.x() +
-                        left_plane.coeff(1) * y_phys + left_plane.coeff(2);
+            double zp = plane_z_at(left_plane.coeff, pt.x(), y_phys);
             sum_l += std::abs(pt.y() - zp);
         }
         m.left_residual = sum_l / m.left_surface_pts.size();
         double sum_r = 0.0;
         for (const auto& pt : m.right_surface_pts) {
-            double zp = right_plane.coeff(0) * pt.x() +
-                        right_plane.coeff(1) * y_phys + right_plane.coeff(2);
+            double zp = plane_z_at(right_plane.coeff, pt.x(), y_phys);
             sum_r += std::abs(pt.y() - zp);
         }
         m.right_residual = sum_r / m.right_surface_pts.size();
+
+        const double left_z =
+                plane_z_at(left_plane.coeff, m.left_boundary.x(), y_phys);
+        const double right_z =
+                plane_z_at(right_plane.coeff, m.right_boundary.x(), y_phys);
+        if (std::isfinite(left_z) && std::isfinite(right_z)) {
+            m.left_boundary.y() = left_z;
+            m.right_boundary.y() = right_z;
+            m.height = right_z - left_z;
+        }
     }
 
     // Collect statistics from accepted slices
@@ -973,7 +985,7 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
     double w_m = median_value(ws), w_mad = median_absolute_deviation(ws, w_m);
     double h_m = median_value(hs), h_mad = median_absolute_deviation(hs, h_m);
     double w_limit = std::max(3.0 * 1.4826 * w_mad, w_m * 0.3);
-    double h_limit = std::max(3.0 * 1.4826 * h_mad, h_m * 0.3);
+    double h_limit = std::max(3.0 * 1.4826 * h_mad, std::abs(h_m) * 0.3);
 
     // Apply filter
     for (int i = 0; i < n; ++i) {
@@ -1062,31 +1074,53 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
                     << m.left_residual << "," << m.right_residual << ","
                     << (m.accepted ? 1 : 0) << "," << m.reject_reason << "\n";
         }
-        // Overview plots
+        // Overview plots: rejected slices as red dots, accepted as green lines
         auto draw_overview = [&](const std::string& fname,
                                  const std::vector<double>& vals) {
             if (vals.empty() || n < 2) return;
-            cv::Mat img(400, 800, CV_8UC3, cv::Scalar(255, 255, 255));
-            double vmin = *std::min_element(vals.begin(), vals.end());
-            double vmax = *std::max_element(vals.begin(), vals.end());
+            // Find range from accepted slices only
+            double vmin = std::numeric_limits<double>::max();
+            double vmax = -std::numeric_limits<double>::max();
+            for (int i = 0; i < n; ++i) {
+                if (!measurements[i].accepted || !std::isfinite(vals[i]))
+                    continue;
+                vmin = std::min(vmin, vals[i]);
+                vmax = std::max(vmax, vals[i]);
+            }
+            if (vmin > vmax) {
+                vmin = 0.0;
+                vmax = 1.0;
+            }
             double vspan = std::max(vmax - vmin, 1e-9);
+            cv::Mat img(400, 800, CV_8UC3, cv::Scalar(255, 255, 255));
+            // Draw rejected slices as red dots
+            for (int i = 0; i < n; ++i) {
+                if (measurements[i].accepted) continue;
+                if (!std::isfinite(vals[i])) continue;
+                int x = i * 780 / std::max(n - 1, 1) + 10;
+                int y = static_cast<int>(380 - (vals[i] - vmin) / vspan * 360);
+                cv::circle(img, cv::Point(x, y), 3, cv::Scalar(0, 0, 255), -1);
+            }
+            // Draw accepted slices as green lines connecting adjacent accepted
             for (int i = 1; i < n; ++i) {
+                if (!measurements[i].accepted || !measurements[i - 1].accepted)
+                    continue;
+                if (!std::isfinite(vals[i]) || !std::isfinite(vals[i - 1]))
+                    continue;
                 int x1 = (i - 1) * 780 / (n - 1) + 10;
                 int x2 = i * 780 / (n - 1) + 10;
                 int y1 = static_cast<int>(380 -
                                           (vals[i - 1] - vmin) / vspan * 360);
                 int y2 = static_cast<int>(380 - (vals[i] - vmin) / vspan * 360);
-                cv::Scalar color = measurements[i].accepted
-                                           ? cv::Scalar(0, 128, 0)
-                                           : cv::Scalar(0, 0, 255);
-                cv::line(img, cv::Point(x1, y1), cv::Point(x2, y2), color, 1);
+                cv::line(img, cv::Point(x1, y1), cv::Point(x2, y2),
+                         cv::Scalar(0, 128, 0), 1);
             }
             cv::imwrite(path + fname, img);
         };
         std::vector<double> wv(n), hv(n), lrv(n), rrv(n);
         for (int i = 0; i < n; ++i) {
-            wv[i] = measurements[i].accepted ? measurements[i].width : 0;
-            hv[i] = measurements[i].accepted ? measurements[i].height : 0;
+            wv[i] = measurements[i].width;
+            hv[i] = measurements[i].height;
             lrv[i] = measurements[i].left_residual;
             rrv[i] = measurements[i].right_residual;
         }
@@ -1173,25 +1207,22 @@ void GapStepDetection::detect_gap_step_dll_plot(
     slice_along_y(cloud, transformation_matrix);
     // std::cout << "2" << std::endl;
 
-    // bspline interpolation
-    // double height_threshold = 0.01;
-    lineSegments corners;
-    // bspline_interpolation(cloud, height_threshold, corners, debug_mode);
-    // std::cout << "3" << std::endl;
-    bspline_interpolation_dll(cloud, height_threshold, corners, debug_path,
-                              debug_mode);
-    // std::cout << "3" << std::endl;
-
-    // calculate the gap step result
-    // double gap_step = 0.0, step_width = 0.0;
     std::vector<double> LHT_width;
     bool LHT = false;
-    calculate_gap_step_dll_plot(corners, LHT_width, gap_step, step_width,
-                                temp_res, LHT);
+    lineSegments corners;
+    std::vector<std::vector<Eigen::Vector2d>> left_surface, right_surface;
+    bspline_interpolation_dll2(cloud, height_threshold, corners, LHT_width,
+                               debug_path, LHT, debug_mode, &left_surface,
+                               &right_surface);
+
+    auto measurements = collect_slice_measurements(
+            corners, LHT_width, LHT, &left_surface, &right_surface);
+    measurements = filter_slices_by_3d_consistency(
+            measurements, transformation_matrix, debug_mode ? debug_path : "");
+    fill_result_from_measurements(measurements, gap_step, step_width,
+                                  &temp_res);
     if (debug_mode) {
-        write_slice_measurements_csv(
-                debug_path,
-                collect_slice_measurements(corners, LHT_width, LHT));
+        write_slice_measurements_csv(debug_path, measurements);
     }
     // std::cout << "4" << std::endl;
 }
@@ -2584,6 +2615,36 @@ int GapStepDetection::test_3d_consistency_filter(const std::string& debug_dir) {
         if (!filtered[0].accepted || !filtered[10].accepted) {
             std::cerr << "TEST5 FAIL: normal slices should be accepted"
                       << std::endl;
+            return 1;
+        }
+    }
+
+    // ----- Test 6: Height should come from fitted surfaces, not noisy boundary
+    // -----
+    {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            auto m = make_slice(i, 10.0, 5.0, 15.0, 8.0, 5.0, 3.0);
+            if (i == 8) {
+                m.right_boundary.y() = 80.0;
+                m.height = m.right_boundary.y() - m.left_boundary.y();
+            }
+            measurements.push_back(m);
+        }
+        auto filtered = filter_slices_by_3d_consistency(
+                measurements, trans_mat,
+                debug_dir.empty() ? "" : debug_dir + "/test6_plane_height");
+        if (!filtered[8].accepted) {
+            std::cerr
+                    << "TEST6 FAIL: noisy boundary slice should be corrected, "
+                       "not rejected"
+                    << std::endl;
+            return 1;
+        }
+        if (std::abs(filtered[8].height - 3.0) > 0.05) {
+            std::cerr << "TEST6 FAIL: expected fitted-surface height near 3.0, "
+                         "got "
+                      << filtered[8].height << std::endl;
             return 1;
         }
     }

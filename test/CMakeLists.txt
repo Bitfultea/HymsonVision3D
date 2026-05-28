@@ -196,7 +196,7 @@ target_link_libraries(
   utility_lib
   core_lib
   geometry_3d_lib
-  pipeline
+  pipeline_testing
   core_lib
 )
 target_compile_definitions(bspline_test PRIVATE HYMSON3D_TESTING)
