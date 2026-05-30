@@ -406,15 +406,11 @@ std::vector<Eigen::Vector2d> PlaneDetection::resample_a_curve(
             sampled_pts, std::max(x.minCoeff(), 0.0), x.maxCoeff());
     Eigen::VectorXd v = spline.interpolate(u);
 
-    std::vector<double> u_vec(u.data(), u.data() + u.size());
-    std::vector<double> v_vec(v.data(), v.data() + v.size());
-
+    // Build resample_pts directly from Eigen vectors (skip intermediate copies)
     std::vector<Eigen::Vector2d> resample_pts;
-    resample_pts.resize(u_vec.size());
-#pragma omp parallel for
-    for (int i = 0; i < u_vec.size(); i++) {
-        resample_pts[i] = Eigen::Vector2d(u_vec[i], v_vec[i]);
-    }
+    resample_pts.reserve(u.size());
+    for (int i = 0; i < u.size(); ++i)
+        resample_pts.emplace_back(u(i), v(i));
 
     if (debug_mode) {
         // Debug-only: compute spline curve for visualization
@@ -432,12 +428,10 @@ std::vector<Eigen::Vector2d> PlaneDetection::resample_a_curve(
         double y_max = *std::max_element(y_vec.begin(), y_vec.end());
         cv::Mat image = cv::Mat::zeros(500, 800, CV_8UC3);
         image.setTo(cv::Scalar(255, 255, 255));
-        for (size_t i = 0; i < u_vec.size(); ++i) {
-            int x = static_cast<int>((u_vec[i] - x_min) / (x_max - x_min) *
-                                     800);
-            int y = static_cast<int>(500 - (v_vec[i] - y_min) /
-                                                   (y_max - y_min) * 500);
-            cv::circle(image, cv::Point(x, y), 2, cv::Scalar(0, 255, 0), -1);
+        for (int i = 0; i < u.size(); ++i) {
+            int px = static_cast<int>((u(i) - x_min) / (x_max - x_min) * 800);
+            int py = static_cast<int>(500 - (v(i) - y_min) / (y_max - y_min) * 500);
+            cv::circle(image, cv::Point(px, py), 2, cv::Scalar(0, 255, 0), -1);
         }
         cv::imwrite(
                 "./bspline/Spline_Curve_int" + std::to_string(plot_id) + ".jpg",

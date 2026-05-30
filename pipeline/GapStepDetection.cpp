@@ -2,10 +2,14 @@
 
 #include <math.h>
 
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <map>
 #include <opencv2/opencv.hpp>
 #include <sstream>
@@ -27,6 +31,36 @@ constexpr double kMaxPlatformSlopeLimit = 35.0;
 constexpr double kMinStableSurfaceSpan = 6.0;
 constexpr int kMaxSurfaceGap = 2;
 constexpr size_t kMinSurfacePoints = 4;
+
+using ProfileClock = std::chrono::steady_clock;
+
+bool profile_enabled() {
+    static const bool enabled =
+            std::getenv("HYMSON3D_PROFILE_BSPLINE") != nullptr;
+    return enabled;
+}
+
+long long elapsed_us(ProfileClock::time_point start) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+                   ProfileClock::now() - start)
+            .count();
+}
+
+class ProfileScope {
+public:
+    explicit ProfileScope(const char* name)
+        : name_(name), start_(ProfileClock::now()) {}
+
+    ~ProfileScope() {
+        if (!profile_enabled()) return;
+        std::cerr << "[profile] " << name_ << ": "
+                  << elapsed_us(start_) / 1000.0 << " ms" << std::endl;
+    }
+
+private:
+    const char* name_;
+    ProfileClock::time_point start_;
+};
 
 struct SurfaceCandidate {
     std::vector<Eigen::Vector2d> points;
@@ -77,6 +111,11 @@ std::vector<SurfaceCandidate> collect_surface_candidates(
         const std::vector<Eigen::Vector2d>& sampled_pts);
 std::vector<Eigen::Vector2d> select_right_platform_surface(
         const std::vector<Eigen::Vector2d>& points);
+std::vector<Eigen::Vector2d> robust_line_fit_inliers(
+        const std::vector<Eigen::Vector2d>& pts);
+std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
+        const std::vector<Eigen::Vector2d>& raw_pts,
+        std::string* fallback_reason);
 
 std::pair<Eigen::Vector2d, Eigen::Vector2d> invalid_corner() {
     const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -128,7 +167,12 @@ std::pair<Eigen::Vector2d, Eigen::Vector2d> fit_line_segment(
 
 std::pair<Eigen::Vector2d, Eigen::Vector2d> fit_line_segment_robust(
         const std::vector<Eigen::Vector2d>& pts) {
-    if (pts.size() < 8) return fit_line_segment(pts);
+    return fit_line_segment(robust_line_fit_inliers(pts));
+}
+
+std::vector<Eigen::Vector2d> robust_line_fit_inliers(
+        const std::vector<Eigen::Vector2d>& pts) {
+    if (pts.size() < 8) return pts;
 
     std::vector<Eigen::Vector2d> inliers = pts;
     for (int iter = 0; iter < 3; ++iter) {
@@ -155,7 +199,7 @@ std::pair<Eigen::Vector2d, Eigen::Vector2d> fit_line_segment_robust(
         }
         inliers.swap(trimmed);
     }
-    return fit_line_segment(inliers);
+    return inliers;
 }
 
 double line_slope(const std::pair<Eigen::Vector2d, Eigen::Vector2d>& line) {
@@ -642,6 +686,7 @@ void fill_result_from_measurements(
 void write_slice_measurements_csv(
         const std::string& debug_path,
         const std::vector<SliceMeasurement>& measurements) {
+    ProfileScope profile("write_slice_measurements_csv");
     if (debug_path.empty()) return;
     std::string path = debug_path;
     if (!path.empty() && path.back() != '/' && path.back() != '\\') path += "/";
@@ -697,6 +742,7 @@ void remove_stale_rejected_debug_images(const std::string& path, int index) {
 void mark_rejected_debug_images(
         const std::string& debug_path,
         const std::vector<SliceMeasurement>& measurements) {
+    ProfileScope profile("mark_rejected_debug_images");
     if (debug_path.empty()) return;
 
     std::string path = debug_path;
@@ -854,6 +900,7 @@ std::vector<SurfaceCandidate> collect_platform_candidates(
                   return a.x() < b.x();
               });
 
+    const size_t n = pts.size();
     const double median_x_step = median_positive_x_step(pts);
     const double x_gap_limit = median_x_step > 0.0
                                        ? std::max(2.5 * median_x_step, 1e-9)
@@ -862,25 +909,74 @@ std::vector<SurfaceCandidate> collect_platform_candidates(
             std::max(kMinStableSurfaceSpan, 6.0 * median_x_step);
     const double max_span = std::max(30.0, min_span * 6.0);
 
+    // Precompute prefix sums for O(1) sliding window stats
+    std::vector<double> pref_x(n + 1, 0.0), pref_y(n + 1, 0.0);
+    std::vector<double> pref_xx(n + 1, 0.0), pref_xy(n + 1, 0.0),
+            pref_yy(n + 1, 0.0);
+    for (size_t i = 0; i < n; ++i) {
+        pref_x[i + 1] = pref_x[i] + pts[i].x();
+        pref_y[i + 1] = pref_y[i] + pts[i].y();
+        pref_xx[i + 1] = pref_xx[i] + pts[i].x() * pts[i].x();
+        pref_xy[i + 1] = pref_xy[i] + pts[i].x() * pts[i].y();
+        pref_yy[i + 1] = pref_yy[i] + pts[i].y() * pts[i].y();
+    }
+
+    // O(1) window stats helper: returns (slope, intercept, rms) or NaN if
+    // invalid
+    auto window_stats = [&](size_t start,
+                            size_t end) -> std::tuple<double, double, double> {
+        size_t m = end - start + 1;
+        double sx = pref_x[end + 1] - pref_x[start];
+        double sy = pref_y[end + 1] - pref_y[start];
+        double sxx = pref_xx[end + 1] - pref_xx[start];
+        double sxy = pref_xy[end + 1] - pref_xy[start];
+        double syy = pref_yy[end + 1] - pref_yy[start];
+        double mx = sx / m, my = sy / m;
+        double var_x = sxx - sx * mx;
+        if (var_x <= 1e-12)
+            return {std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0};
+        double cov_xy = sxy - sx * my;
+        double slope = cov_xy / var_x;
+        double intercept = my - slope * mx;
+        double rms_sq = (syy - 2.0 * intercept * sy - 2.0 * slope * sxy +
+                         intercept * intercept * m +
+                         2.0 * slope * intercept * sx + slope * slope * sxx) /
+                        m;
+        if (rms_sq < 0.0) rms_sq = 0.0;
+        return {slope, intercept, std::sqrt(rms_sq)};
+    };
+
     std::vector<SurfaceCandidate> candidates;
-    for (int start = 0; start < pts.size(); ++start) {
-        for (int end = start + static_cast<int>(kMinSurfacePoints) - 1;
-             end < pts.size(); ++end) {
+    for (size_t start = 0; start < n; ++start) {
+        for (size_t end = start + kMinSurfacePoints - 1; end < n; ++end) {
             if (end > start && pts[end].x() - pts[end - 1].x() > x_gap_limit)
                 break;
 
-            const double span = pts[end].x() - pts[start].x();
+            double span = pts[end].x() - pts[start].x();
             if (span < min_span) continue;
             if (span > max_span) break;
 
-            std::vector<Eigen::Vector2d> window(pts.begin() + start,
-                                                pts.begin() + end + 1);
-            auto candidate = make_surface_candidate(window);
-            const double slope = std::abs(line_slope(candidate.line));
-            const double roughness =
-                    candidate.rms / std::max(candidate.span, 1e-9);
-            if (slope > kMaxPlatformSlopeLimit) continue;
+            auto [slope, intercept, rms] = window_stats(start, end);
+            if (std::isnan(slope)) continue;
+            if (std::abs(slope) > kMaxPlatformSlopeLimit) continue;
+            double roughness = rms / std::max(span, 1e-9);
             if (roughness > 35.0) continue;
+
+            // Materialize only qualifying candidates
+            SurfaceCandidate candidate;
+            candidate.points.assign(pts.begin() + start, pts.begin() + end + 1);
+            candidate.x_min = pts[start].x();
+            candidate.x_max = pts[end].x();
+            candidate.x_center = 0.5 * (candidate.x_min + candidate.x_max);
+            candidate.span = span;
+            candidate.y_center =
+                    (pref_y[end + 1] - pref_y[start]) / (end - start + 1);
+            candidate.rms = rms;
+            candidate.line = std::make_pair(
+                    Eigen::Vector2d(candidate.x_min,
+                                    slope * candidate.x_min + intercept),
+                    Eigen::Vector2d(candidate.x_max,
+                                    slope * candidate.x_max + intercept));
             candidates.push_back(candidate);
         }
     }
@@ -1144,6 +1240,7 @@ std::string format_double(double value, int precision = 3) {
 void draw_final_measurement_summary(
         const std::string& output_path,
         const std::vector<SliceMeasurement>& measurements) {
+    ProfileScope profile("draw_final_measurement_summary");
     if (measurements.empty()) return;
 
     std::vector<double> accepted_widths;
@@ -1408,6 +1505,25 @@ void draw_final_measurement_summary(
     cv::imwrite(output_path, image);
 }
 
+void remove_legacy_3d_debug_artifacts(const std::string& debug_path) {
+    if (debug_path.empty()) return;
+
+    std::string path = debug_path;
+    if (path.back() != '/' && path.back() != '\\') path += "/";
+    const char* filenames[] = {
+            "slice_metrics_3d.csv",        "left_3d_plane.tiff",
+            "right_3d_plane.tiff",         "left_3d_plane_full.tiff",
+            "right_3d_plane_full.tiff",    "left_3d_plane.ply",
+            "right_3d_plane.ply",          "fitted_3d_planes.ply",
+            "left_3d_plane_full.ply",      "right_3d_plane_full.ply",
+            "fitted_3d_planes_full.ply",   "left_residual_vs_slice.png",
+            "right_residual_vs_slice.png",
+    };
+    for (const char* filename : filenames) {
+        std::remove((path + filename).c_str());
+    }
+}
+
 void write_3d_filter_debug_snapshot(
         const std::string& debug_path,
         const std::vector<SliceMeasurement>& measurements) {
@@ -1416,18 +1532,7 @@ void write_3d_filter_debug_snapshot(
     std::string path = debug_path;
     if (path.back() != '/' && path.back() != '\\') path += "/";
     utility::filesystem::MakeDirectoryHierarchy(path);
-
-    std::ofstream ofs(path + "slice_metrics_3d.csv");
-    if (ofs.is_open()) {
-        ofs << "slice,width,height,left_x,right_x,"
-               "left_residual,right_residual,accepted,reject_reason\n";
-        for (const auto& m : measurements) {
-            ofs << m.index << "," << m.width << "," << m.height << ","
-                << m.left_boundary.x() << "," << m.right_boundary.x() << ","
-                << m.left_residual << "," << m.right_residual << ","
-                << (m.accepted ? 1 : 0) << "," << m.reject_reason << "\n";
-        }
-    }
+    remove_legacy_3d_debug_artifacts(path);
 
     draw_final_measurement_summary(path + "final_measurement_summary.png",
                                    measurements);
@@ -1484,6 +1589,7 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
         std::vector<SliceMeasurement> measurements,
         const Eigen::Vector3d& trans_mat,
         const std::string& debug_path) {
+    ProfileScope profile("filter_slices_by_3d_consistency");
     if (measurements.empty()) return measurements;
     const int n = static_cast<int>(measurements.size());
 
@@ -1688,19 +1794,242 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
             }
             cv::imwrite(path + fname, img);
         };
-        std::vector<double> wv(n), hv(n), lrv(n), rrv(n);
+        std::vector<double> wv(n), hv(n);
         for (int i = 0; i < n; ++i) {
             wv[i] = measurements[i].width;
             hv[i] = measurements[i].height;
-            lrv[i] = measurements[i].left_residual;
-            rrv[i] = measurements[i].right_residual;
         }
         draw_overview("width_vs_slice.png", wv);
         draw_overview("height_vs_slice.png", hv);
-        draw_overview("left_residual_vs_slice.png", lrv);
-        draw_overview("right_residual_vs_slice.png", rrv);
     }
     return measurements;
+}
+
+// ========== Raw-grid fast path ==========
+// Detects left/right platform surfaces directly from raw ordered TIFF points
+// without B-spline upsampling. Returns empty vector on any failure to
+// trigger automatic fallback to the B-spline path.
+std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
+        const std::vector<Eigen::Vector2d>& raw_pts,
+        std::string* fallback_reason) {
+    constexpr double kFastMinPoints = 20;
+    constexpr double kFastMinSpan = 3.0;
+    constexpr int kSmoothWindow = 3;
+
+    if (raw_pts.size() < kFastMinPoints) {
+        if (fallback_reason) *fallback_reason = "too_few_points";
+        return {};
+    }
+
+    // Sort by x for ordered processing
+    std::vector<Eigen::Vector2d> pts = raw_pts;
+    std::sort(pts.begin(), pts.end(),
+              [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                  if (a.x() == b.x()) return a.y() < b.y();
+                  return a.x() < b.x();
+              });
+
+    // Verify regular x-spacing
+    std::vector<double> x_steps;
+    x_steps.reserve(pts.size());
+    for (size_t i = 1; i < pts.size(); ++i) {
+        double dx = pts[i].x() - pts[i - 1].x();
+        if (dx <= 1e-12) {
+            if (fallback_reason) *fallback_reason = "irregular_x_spacing";
+            return {};
+        }
+        x_steps.push_back(dx);
+    }
+    double median_dx = median_value(x_steps);
+    for (double dx : x_steps) {
+        if (dx > 3.0 * median_dx || dx < median_dx * 0.3) {
+            if (fallback_reason) *fallback_reason = "irregular_x_spacing";
+            return {};
+        }
+    }
+
+    // Light smoothing: moving average
+    std::vector<Eigen::Vector2d> smoothed(pts.size());
+    for (size_t i = 0; i < pts.size(); ++i) {
+        double sum_x = 0.0, sum_y = 0.0;
+        int count = 0;
+        for (int j = -kSmoothWindow / 2; j <= kSmoothWindow / 2; ++j) {
+            int idx = static_cast<int>(i) + j;
+            if (idx >= 0 && idx < static_cast<int>(pts.size())) {
+                sum_x += pts[idx].x();
+                sum_y += pts[idx].y();
+                ++count;
+            }
+        }
+        smoothed[i] = Eigen::Vector2d(sum_x / count, sum_y / count);
+    }
+
+    // Adaptive slope threshold from local slope distribution
+    std::vector<double> abs_slopes;
+    for (size_t i = 1; i < smoothed.size(); ++i) {
+        double dx = smoothed[i].x() - smoothed[i - 1].x();
+        if (std::abs(dx) < 1e-12) continue;
+        abs_slopes.push_back(
+                std::abs((smoothed[i].y() - smoothed[i - 1].y()) / dx));
+    }
+    if (abs_slopes.empty()) {
+        if (fallback_reason) *fallback_reason = "no_valid_slopes";
+        return {};
+    }
+    double median_slope = median_value(abs_slopes);
+    double slope_threshold = std::max(0.35, median_slope * 3.0);
+
+    // Compute local slopes and flag flat regions
+    std::vector<bool> is_flat(pts.size(), false);
+    for (size_t i = 1; i < smoothed.size(); ++i) {
+        double dx = smoothed[i].x() - smoothed[i - 1].x();
+        double slope = std::abs((smoothed[i].y() - smoothed[i - 1].y()) / dx);
+        if (slope <= slope_threshold) {
+            is_flat[i] = true;
+            is_flat[i - 1] = true;
+        }
+    }
+
+    // Extract contiguous flat segments
+    struct FlatSegment {
+        size_t start, end;
+        double span;
+    };
+    std::vector<FlatSegment> segments;
+    size_t seg_start = 0;
+    bool in_segment = is_flat[0];
+    for (size_t i = 1; i < is_flat.size(); ++i) {
+        if (is_flat[i] && !in_segment) {
+            seg_start = i;
+            in_segment = true;
+        } else if (!is_flat[i] && in_segment) {
+            double span = pts[i - 1].x() - pts[seg_start].x();
+            if (span >= kFastMinSpan &&
+                (i - 1 - seg_start + 1) >= kMinSurfacePoints)
+                segments.push_back({seg_start, i - 1, span});
+            in_segment = false;
+        }
+    }
+    if (in_segment) {
+        size_t last = is_flat.size() - 1;
+        double span = pts[last].x() - pts[seg_start].x();
+        if (span >= kFastMinSpan && (last - seg_start + 1) >= kMinSurfacePoints)
+            segments.push_back({seg_start, last, span});
+    }
+
+    if (segments.size() < 2) {
+        if (fallback_reason) *fallback_reason = "too_few_segments";
+        return {};
+    }
+
+    // Adaptive RMS threshold: scale with Z-range
+    double z_range = 0.0;
+    {
+        auto [ymin, ymax] = std::minmax_element(
+                pts.begin(), pts.end(),
+                [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                    return a.y() < b.y();
+                });
+        z_range = std::abs(ymax->y() - ymin->y());
+    }
+    double max_acceptable_rms = std::max(10.0, z_range * 0.05);
+
+    // Score segments: prefer long, low-RMS segments
+    struct ScoredSegment {
+        FlatSegment seg;
+        std::pair<Eigen::Vector2d, Eigen::Vector2d> line;
+        double rms;
+        double score;
+    };
+    std::vector<ScoredSegment> scored;
+    for (const auto& seg : segments) {
+        std::vector<Eigen::Vector2d> pts_seg(pts.begin() + seg.start,
+                                             pts.begin() + seg.end + 1);
+        auto line = fit_line_segment(pts_seg);
+        double sum_sq = 0.0;
+        for (const auto& pt : pts_seg) {
+            double r = pt.y() - line_y_at_x(line, pt.x());
+            sum_sq += r * r;
+        }
+        double rms = std::sqrt(sum_sq / pts_seg.size());
+        double slope = std::abs(line_slope(line));
+        double score = seg.span - 5.0 * rms - 3.0 * slope;
+        scored.push_back({seg, line, rms, score});
+    }
+    if (scored.size() < 2) {
+        if (fallback_reason) *fallback_reason = "too_few_scored_segments";
+        return {};
+    }
+
+    // Sort by score descending
+    std::sort(scored.begin(), scored.end(),
+              [](const ScoredSegment& a, const ScoredSegment& b) {
+                  return a.score > b.score;
+              });
+
+    // Pick best left and right segments by x-position
+    const ScoredSegment* left_best = nullptr;
+    const ScoredSegment* right_best = nullptr;
+    double best_left_x = std::numeric_limits<double>::max();
+    double best_right_x = -std::numeric_limits<double>::max();
+    for (const auto& s : scored) {
+        if (s.line.first.x() < best_left_x) {
+            best_left_x = s.line.first.x();
+            left_best = &s;
+        }
+        if (s.line.second.x() > best_right_x) {
+            best_right_x = s.line.second.x();
+            right_best = &s;
+        }
+    }
+
+    if (!left_best || !right_best || left_best == right_best) {
+        if (fallback_reason) *fallback_reason = "left_right_overlap";
+        return {};
+    }
+
+    // Verify enough x-separation between left and right
+    if (right_best->line.first.x() - left_best->line.second.x() <
+        median_dx * 2.0) {
+        if (fallback_reason) *fallback_reason = "insufficient_x_separation";
+        return {};
+    }
+
+    // Verify segment quality with adaptive thresholds
+    if (left_best->rms > max_acceptable_rms) {
+        if (fallback_reason) *fallback_reason = "left_high_rms";
+        return {};
+    }
+    if (right_best->rms > max_acceptable_rms) {
+        if (fallback_reason) *fallback_reason = "right_high_rms";
+        return {};
+    }
+
+    // Verify segment slopes are stable (not near-vertical)
+    if (std::abs(line_slope(left_best->line)) > kMaxPlatformSlopeLimit ||
+        std::abs(line_slope(right_best->line)) > kMaxPlatformSlopeLimit) {
+        if (fallback_reason) *fallback_reason = "platform_too_steep";
+        return {};
+    }
+
+    // Materialize inlier points for both segments
+    std::vector<Eigen::Vector2d> left_pts(pts.begin() + left_best->seg.start,
+                                          pts.begin() + left_best->seg.end + 1);
+    std::vector<Eigen::Vector2d> right_pts(
+            pts.begin() + right_best->seg.start,
+            pts.begin() + right_best->seg.end + 1);
+
+    // Apply robust line fit filtering for cleaner inliers
+    left_pts = robust_line_fit_inliers(left_pts);
+    right_pts = robust_line_fit_inliers(right_pts);
+
+    if (left_pts.size() < kMinSurfacePoints ||
+        right_pts.size() < kMinSurfacePoints) {
+        if (fallback_reason) *fallback_reason = "insufficient_inliers";
+        return {};
+    }
+
+    return {left_pts, right_pts};
 }
 
 }  // namespace
@@ -1841,6 +2170,7 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
         std::string& debug_path,
         bool LHT,
         bool debug_mode) {
+    ProfileScope profile("detect_gap_step_dll_plot2_impl");
     // debug mode
     if (debug_mode) {
         utility::filesystem::MakeDirectory_dll(debug_path);
@@ -1880,6 +2210,7 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
 
 void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
                                      Eigen::Vector3d transformation_matrix) {
+    ProfileScope profile("slice_along_y");
     bool has_normals = cloud->HasNormals();
     // std::cout << transformation_matrix << std::endl;
     // std::cout << "has points: " << cloud->points_.size() << std::endl;
@@ -2063,6 +2394,7 @@ void GapStepDetection::bspline_interpolation_dll2(
         bool debug_mode,
         std::vector<std::vector<Eigen::Vector2d>>* left_surface,
         std::vector<std::vector<Eigen::Vector2d>>* right_surface) {
+    ProfileScope profile("bspline_interpolation_dll2");
     // use common part to fit a curve
     core::PlaneDetection plane_detector;
     std::vector<double> step_height;
@@ -2077,55 +2409,99 @@ void GapStepDetection::bspline_interpolation_dll2(
     if (left_surface) left_surface->resize(n_slices);
     if (right_surface) right_surface->resize(n_slices);
 
+    std::atomic<long long> resample_us_sum{0};
+    std::atomic<long long> group_us_sum{0};
+    std::atomic<long long> filter_us_sum{0};
+    std::atomic<long long> line_us_sum{0};
+    std::atomic<long long> measure_us_sum{0};
+    std::atomic<long long> plot_us_sum{0};
+    std::atomic<int> fast_hit_count{0};
+    std::atomic<int> fast_miss_count{0};
+    std::vector<std::string> fast_miss_reasons(n_slices);
+
 #pragma omp parallel for
     for (int i = 0; i < cloud->y_slices_.size(); i++) {
         // Cubic B-spline needs at least degree+1 = 4 control points
         if (cloud->y_slices_[i].size() < 4) continue;
-        int sampled_pts = adaptive_sample_count(cloud->y_slices_[i].size());
-        std::vector<Eigen::Vector2d> resampled_pts =
-                plane_detector.resample_a_curve(cloud->y_slices_[i],
-                                                sampled_pts, i, false);
-        // compute the derivative
-        std::vector<Eigen::Vector2d> limit_pts;
-        std::vector<std::vector<Eigen::Vector2d>> groups =
-                group_by_derivative_dll(resampled_pts);
 
-        // Guard: mark this slice as invalid if either group is empty (cannot
-        // cluster)
-        if (groups.size() < 2 || groups[0].empty() || groups[1].empty()) {
-            LHT_width[i] = std::numeric_limits<double>::quiet_NaN();
-            corners[i] = std::make_pair(
-                    Eigen::Vector2d(std::numeric_limits<double>::quiet_NaN(),
-                                    std::numeric_limits<double>::quiet_NaN()),
-                    Eigen::Vector2d(std::numeric_limits<double>::quiet_NaN(),
-                                    std::numeric_limits<double>::quiet_NaN()));
-            continue;
+        std::vector<Eigen::Vector2d> limit_pts;
+        std::vector<std::vector<Eigen::Vector2d>> filter_groups;
+        bool used_fast_path = false;
+        std::vector<Eigen::Vector2d>
+                resampled_pts;  // populated only for bspline path
+
+        // --- Fast path: try raw-grid detection first ---
+        {
+            std::string fallback_reason;
+            auto fast_groups = fast_path_detect_platforms(cloud->y_slices_[i],
+                                                          &fallback_reason);
+            if (!fast_groups.empty()) {
+                filter_groups = std::move(fast_groups);
+                // Compute limit_pts from filter_groups for downstream use
+                for (int g = 0; g < 2 && g < filter_groups.size(); ++g) {
+                    if (filter_groups[g].empty()) continue;
+                    auto [min_it, max_it] = std::minmax_element(
+                            filter_groups[g].begin(), filter_groups[g].end(),
+                            [](const Eigen::Vector2d& a,
+                               const Eigen::Vector2d& b) {
+                                return a.x() < b.x();
+                            });
+                    limit_pts.push_back(*min_it);
+                    limit_pts.push_back(*max_it);
+                }
+                used_fast_path = true;
+                fast_hit_count.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                fast_miss_count.fetch_add(1, std::memory_order_relaxed);
+                fast_miss_reasons[i] = fallback_reason;
+            }
         }
 
-        std::vector<std::vector<Eigen::Vector2d>> filter_groups =
-                statistics_filter(groups, limit_pts);
+        if (!used_fast_path) {
+            // --- B-spline fallback path ---
+            int sampled_pts = adaptive_sample_count(cloud->y_slices_[i].size());
+            auto step_start = ProfileClock::now();
+            resampled_pts = plane_detector.resample_a_curve(
+                    cloud->y_slices_[i], sampled_pts, i, false);
+            resample_us_sum.fetch_add(elapsed_us(step_start),
+                                      std::memory_order_relaxed);
+            step_start = ProfileClock::now();
+            auto groups = group_by_derivative_dll(resampled_pts);
+            group_us_sum.fetch_add(elapsed_us(step_start),
+                                   std::memory_order_relaxed);
 
-        // Save surface points for 3D filtering
+            step_start = ProfileClock::now();
+            filter_groups = statistics_filter(groups, limit_pts);
+            filter_us_sum.fetch_add(elapsed_us(step_start),
+                                    std::memory_order_relaxed);
+        }
+
+        double left_height_threshold = height_threshold,
+               right_height_threshold = height_threshold;
+        auto step_start = ProfileClock::now();
+        lineSegments lines = line_segment(filter_groups);
+        line_us_sum.fetch_add(elapsed_us(step_start),
+                              std::memory_order_relaxed);
+        // Store surface points for 3D filtering
         if (left_surface && filter_groups.size() > 0)
             (*left_surface)[i] = filter_groups[0];
         if (right_surface && filter_groups.size() > 1)
             (*right_surface)[i] = filter_groups[1];
-
-        double left_height_threshold = height_threshold,
-               right_height_threshold = height_threshold;
-        lineSegments lines = line_segment(filter_groups);
         if (lines.size() < 2) {
             step_height[i] = -255.0;
             LHT_width[i] = -255.0;
             if (debug_mode) {
-                plot_clusters_dll(resampled_pts, filter_groups, lines, {},
-                                  limit_pts, debug_path, i);
+                auto& plot_pts =
+                        used_fast_path ? cloud->y_slices_[i] : resampled_pts;
+                plot_clusters_dll(plot_pts, filter_groups, lines, {}, limit_pts,
+                                  debug_path, i);
             }
             continue;
         }
         step_height[i] = std::abs(lines[0].first.y() - lines[1].first.y());
         std::vector<std::vector<Eigen::Vector2d>> intersections;
         std::vector<double> temp_width;
+        step_start = ProfileClock::now();
         compute_step_width_dll(cloud->y_slices_[i], resampled_pts, lines,
                                intersections, temp_width, left_height_threshold,
                                right_height_threshold, limit_pts, LHT);
@@ -2143,16 +2519,46 @@ void GapStepDetection::bspline_interpolation_dll2(
         } else {
             corners[i] = invalid_corner();
         }
+        measure_us_sum.fetch_add(elapsed_us(step_start),
+                                 std::memory_order_relaxed);
 
         if (debug_mode) {
+            step_start = ProfileClock::now();
+            auto& plot_pts =
+                    used_fast_path ? cloud->y_slices_[i] : resampled_pts;
             if (LHT) {
-                plot_clusters_dll_lht(cloud->y_slices_[i], resampled_pts,
+                plot_clusters_dll_lht(cloud->y_slices_[i], plot_pts,
                                       filter_groups, lines, height_threshold,
                                       intersections, limit_pts, debug_path, i);
             } else {
-                plot_clusters_dll(resampled_pts, filter_groups, lines,
-                                  intersections, limit_pts, debug_path, i);
+                plot_clusters_dll(plot_pts, filter_groups, lines, intersections,
+                                  limit_pts, debug_path, i);
             }
+            plot_us_sum.fetch_add(elapsed_us(step_start),
+                                  std::memory_order_relaxed);
+        }
+    }
+
+    if (profile_enabled()) {
+        std::cerr << "[profile] bspline_interpolation_dll2: "
+                  << "fast_hit=" << fast_hit_count.load()
+                  << " fast_miss=" << fast_miss_count.load() << std::endl;
+        std::cerr << "[profile] bspline_interpolation_dll2.thread_sum: "
+                  << "resample=" << resample_us_sum.load() / 1000.0 << " ms, "
+                  << "group=" << group_us_sum.load() / 1000.0 << " ms, "
+                  << "filter=" << filter_us_sum.load() / 1000.0 << " ms, "
+                  << "line=" << line_us_sum.load() / 1000.0 << " ms, "
+                  << "measure=" << measure_us_sum.load() / 1000.0 << " ms, "
+                  << "plot=" << plot_us_sum.load() / 1000.0 << " ms"
+                  << std::endl;
+        if (fast_miss_count.load() > 0) {
+            std::map<std::string, int> reason_counts;
+            for (const auto& r : fast_miss_reasons)
+                if (!r.empty()) reason_counts[r]++;
+            std::cerr << "[profile] fast_path fallback reasons:";
+            for (const auto& [reason, count] : reason_counts)
+                std::cerr << " " << reason << "=" << count;
+            std::cerr << std::endl;
         }
     }
 
@@ -2187,6 +2593,7 @@ std::vector<std::vector<Eigen::Vector2d>> GapStepDetection::group_by_derivative(
     }
     return group_horizontal_by_height(horiz_pts);
 }
+
 std::vector<std::vector<Eigen::Vector2d>>
 GapStepDetection::group_by_derivative_dll(
         std::vector<Eigen::Vector2d>& sampled_pts
@@ -2869,10 +3276,13 @@ GapStepDetection::lineSegments GapStepDetection::line_segment(
     std::vector<std::pair<Eigen::Vector2d, Eigen::Vector2d>> res;
     for (int i = 0; i < pt_groups.size(); i++) {
         if (pt_groups[i].size() < kMinSurfacePoints) continue;
-        res.push_back(fit_line_segment_robust(pt_groups[i]));
+        pt_groups[i] = robust_line_fit_inliers(pt_groups[i]);
+        res.push_back(fit_line_segment(pt_groups[i]));
     }
-    if (res.size() >= 2 && res[0].second.x() > res[1].first.x())
+    if (res.size() >= 2 && res[0].second.x() > res[1].first.x()) {
         std::swap(res[1], res[0]);
+        if (pt_groups.size() >= 2) std::swap(pt_groups[1], pt_groups[0]);
+    }
     return res;
 }
 // fix width calculate error
@@ -2892,7 +3302,8 @@ GapStepDetection::lineSegments GapStepDetection::line_segment_dll(
                                          Eigen::Vector2d(0, 0)));
             continue;
         }
-        res.push_back(fit_line_segment_robust(filter_pt_groups[i]));
+        filter_pt_groups[i] = robust_line_fit_inliers(filter_pt_groups[i]);
+        res.push_back(fit_line_segment(filter_pt_groups[i]));
         // calculate every point distance to line
         for (const auto& dpt : pt_groups[i]) {
             const double line_y = line_y_at_x(res.back(), dpt.x());
@@ -2914,6 +3325,9 @@ GapStepDetection::lineSegments GapStepDetection::line_segment_dll(
     }
     if (res.size() >= 2 && res[0].second.x() > res[1].first.x()) {
         std::swap(res[1], res[0]);
+        if (pt_groups.size() >= 2) std::swap(pt_groups[1], pt_groups[0]);
+        if (filter_pt_groups.size() >= 2)
+            std::swap(filter_pt_groups[1], filter_pt_groups[0]);
         std::swap(threshold_res[1], threshold_res[0]);
     }
     if (threshold_res.size() >= 2) {
@@ -3298,15 +3712,132 @@ int GapStepDetection::test_3d_consistency_filter(const std::string& debug_dir) {
             return 1;
         }
         if (!debug_dir.empty()) {
-            std::ifstream ifs(
-                    debug_dir +
-                    "/test6_plane_height/final_measurement_summary.png");
+            const std::string plane_debug_dir =
+                    debug_dir + "/test6_plane_height/";
+            std::ifstream ifs(plane_debug_dir +
+                              "final_measurement_summary.png");
             if (!ifs.good()) {
                 std::cerr << "TEST6 FAIL: final measurement summary image was "
                              "not written"
                           << std::endl;
                 return 1;
             }
+            if (utility::filesystem::FileExists(plane_debug_dir +
+                                                "slice_metrics_3d.csv") ||
+                utility::filesystem::FileExists(plane_debug_dir +
+                                                "left_3d_plane.tiff") ||
+                utility::filesystem::FileExists(plane_debug_dir +
+                                                "right_3d_plane.tiff") ||
+                utility::filesystem::FileExists(plane_debug_dir +
+                                                "left_3d_plane.ply") ||
+                utility::filesystem::FileExists(plane_debug_dir +
+                                                "right_3d_plane.ply") ||
+                utility::filesystem::FileExists(plane_debug_dir +
+                                                "fitted_3d_planes.ply") ||
+                utility::filesystem::FileExists(plane_debug_dir +
+                                                "left_residual_vs_slice.png") ||
+                utility::filesystem::FileExists(
+                        plane_debug_dir + "right_residual_vs_slice.png")) {
+                std::cerr << "TEST6 FAIL: 3D debug artifacts should not be "
+                             "written"
+                          << std::endl;
+                return 1;
+            }
+        }
+    }
+
+    // ----- Test 7: Debug surface points should match robust line-fit inliers
+    // -----
+    {
+        std::vector<std::vector<Eigen::Vector2d>> groups(2);
+        for (int x = 0; x <= 30; ++x) {
+            groups[0].emplace_back(static_cast<double>(x), 0.02 * x);
+        }
+        groups[0].emplace_back(70.0, 80.0);
+        for (int x = 90; x <= 120; ++x) {
+            groups[1].emplace_back(static_cast<double>(x), 10.0 - 0.01 * x);
+        }
+        groups[1].emplace_back(50.0, -75.0);
+
+        auto lines = line_segment(groups);
+        if (lines.size() != 2 || groups[0].empty() || groups[1].empty()) {
+            std::cerr << "TEST7 FAIL: expected two fitted lines" << std::endl;
+            return 1;
+        }
+        auto left_max_it = std::max_element(
+                groups[0].begin(), groups[0].end(),
+                [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                    return a.x() < b.x();
+                });
+        auto right_min_it = std::min_element(
+                groups[1].begin(), groups[1].end(),
+                [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                    return a.x() < b.x();
+                });
+        if (left_max_it->x() != lines[0].second.x() ||
+            right_min_it->x() != lines[1].first.x()) {
+            std::cerr << "TEST7 FAIL: debug points and measurement endpoints "
+                         "should come from the same robust inlier set"
+                      << std::endl;
+            return 1;
+        }
+        if (left_max_it->x() >= 70.0 || right_min_it->x() <= 50.0) {
+            std::cerr << "TEST7 FAIL: robust outliers should be removed from "
+                         "debug/reference point groups"
+                      << std::endl;
+            return 1;
+        }
+    }
+
+    // ----- Test 8: No 3D debug artifacts should be written -----
+    if (!debug_dir.empty()) {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            SliceMeasurement m;
+            m.index = i;
+            m.left_boundary = Eigen::Vector2d(12.0, 5.0);
+            m.right_boundary = Eigen::Vector2d(32.0, 8.0);
+            m.width = 20.0;
+            m.height = 3.0;
+            for (int x = 10; x <= 14; ++x) {
+                m.left_surface_pts.emplace_back(static_cast<double>(x), 5.0);
+            }
+            for (int x = 30; x <= 34; ++x) {
+                m.right_surface_pts.emplace_back(static_cast<double>(x), 8.0);
+            }
+            m.accepted = true;
+            measurements.push_back(m);
+        }
+
+        const std::string debug_path = debug_dir + "/test8_no_3d_debug/";
+        auto filtered = filter_slices_by_3d_consistency(measurements, trans_mat,
+                                                        debug_path);
+        int accepted_count = 0;
+        for (const auto& m : filtered)
+            if (m.accepted) accepted_count++;
+        if (accepted_count != n_slices) {
+            std::cerr << "TEST8 FAIL: synthetic slices should remain accepted"
+                      << std::endl;
+            return 1;
+        }
+        if (utility::filesystem::FileExists(debug_path +
+                                            "slice_metrics_3d.csv") ||
+            utility::filesystem::FileExists(debug_path +
+                                            "left_3d_plane.tiff") ||
+            utility::filesystem::FileExists(debug_path +
+                                            "right_3d_plane.tiff") ||
+            utility::filesystem::FileExists(debug_path + "left_3d_plane.ply") ||
+            utility::filesystem::FileExists(debug_path +
+                                            "right_3d_plane.ply") ||
+            utility::filesystem::FileExists(debug_path +
+                                            "fitted_3d_planes.ply") ||
+            utility::filesystem::FileExists(debug_path +
+                                            "left_residual_vs_slice.png") ||
+            utility::filesystem::FileExists(debug_path +
+                                            "right_residual_vs_slice.png")) {
+            std::cerr << "TEST8 FAIL: 3D debug artifacts should not be written"
+                      << std::endl;
+            return 1;
         }
     }
 

@@ -8,6 +8,8 @@ PointCloud &PointCloud::Clear() {
     colors_.clear();
     intensities_.clear();
     covariances_.clear();
+    width_ = 0;
+    height_ = 0;
     return *this;
 }
 

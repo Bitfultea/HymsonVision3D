@@ -121,8 +121,8 @@ public:
     std::vector<std::vector<size_t>> x_slice_idxs;
 
     // for tiff conversion
-    size_t width_;
-    size_t height_;
+    size_t width_ = 0;
+    size_t height_ = 0;
 };
 }  // namespace geometry
 }  // namespace hymson3d

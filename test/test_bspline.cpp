@@ -167,8 +167,7 @@ static int run_self_test(const char* debug_dir) {
                     return a.x() < b.x();
                 });
         const double dx = max_it->x() - min_it->x();
-        return std::abs(dx) < 1e-12 ? 0.0
-                                    : (max_it->y() - min_it->y()) / dx;
+        return std::abs(dx) < 1e-12 ? 0.0 : (max_it->y() - min_it->y()) / dx;
     };
     const double dy = std::abs(mean_y(groups[0]) - mean_y(groups[1]));
     if (dy > 1e-6) {
@@ -413,8 +412,8 @@ static int run_self_test(const char* debug_dir) {
     if (real_right_min_it->x() < 455.0 || real_right_max_it->x() < 468.0) {
         std::cerr << "real-like right support should use the top platform, "
                      "got x=["
-                  << real_right_min_it->x() << ", "
-                  << real_right_max_it->x() << "]" << std::endl;
+                  << real_right_min_it->x() << ", " << real_right_max_it->x()
+                  << "]" << std::endl;
         return 1;
     }
     const double real_right_slope = endpoint_slope(real_like_groups[1]);
@@ -497,6 +496,12 @@ int main(int argc, char** argv) {
             pointcloud, transformation_matrix, step_height, step_width,
             height_threshold, temp_res, debug_path, LHT, debug_mode);
 
+    double step_height_ =
+            (step_height / transformation_matrix.z()) / tiff_ratio.z();
+    double step_width_ =
+            (step_width / transformation_matrix.x()) / tiff_ratio.x();
+    std::cout << "step_height: " << step_height_ << std::endl;
+    std::cout << "step_width: " << step_width_ << std::endl;
     wait_for_key();
     return 0;
 }

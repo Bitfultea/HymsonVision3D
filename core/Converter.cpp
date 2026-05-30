@@ -219,6 +219,8 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     }
     pointcloud->points_ = pcd;
     pointcloud->intensities_ = intensities;
+    pointcloud->width_ = tiff_image.cols;
+    pointcloud->height_ = tiff_image.rows;
     LOG_DEBUG("Read from tiff file with pointcloud(intensity) size: {}",
               pointcloud->points_.size());
 }
