@@ -77,6 +77,10 @@ public:
             std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<std::vector<Eigen::Vector2d>>
     test_fast_path_detect_platforms(std::vector<Eigen::Vector2d>& raw_pts);
+    static std::pair<Eigen::Vector2d, Eigen::Vector2d>
+    test_compute_step_boundaries(const std::vector<Eigen::Vector2d>& left_pts,
+                                 const std::vector<Eigen::Vector2d>& right_pts,
+                                 std::vector<Eigen::Vector2d> limit_pts);
     static int test_mark_rejected_debug_images(const std::string& debug_dir);
     // 3D consistency filter self-test entry
     static int test_3d_consistency_filter(

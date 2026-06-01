@@ -46,6 +46,12 @@ long long elapsed_us(ProfileClock::time_point start) {
             .count();
 }
 
+void ensure_trailing_path_separator(std::string& path) {
+    if (path.empty()) return;
+    const char last = path.back();
+    if (last != '/' && last != '\\') path += "/";
+}
+
 class ProfileScope {
 public:
     explicit ProfileScope(const char* name) : name_(name) {
@@ -536,6 +542,14 @@ void draw_measurement_overlay(
                    2);
     cv::drawMarker(image, right_px, cv::Scalar(0, 0, 0), cv::MARKER_SQUARE, 14,
                    2);
+
+    std::ostringstream label;
+    label << std::fixed << std::setprecision(3)
+          << "W=" << std::abs(right_boundary.x() - left_boundary.x())
+          << " H=" << (right_boundary.y() - left_boundary.y());
+    cv::putText(image, label.str(), cv::Point(8, image.rows - 12),
+                cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1,
+                cv::LINE_AA);
 }
 
 double trimmed_mean(std::vector<double> values) {
@@ -1971,6 +1985,45 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
     double median_slope = median_value(abs_slopes);
     double slope_threshold = std::max(0.35, median_slope * 3.0);
 
+    struct EdgeSpan {
+        bool valid = false;
+        double left_x = 0.0;
+    };
+    EdgeSpan primary_edge;
+    {
+        std::vector<double> local_slopes(smoothed.size() - 1, 0.0);
+        size_t max_slope_idx = 0;
+        double max_slope = -1.0;
+        for (size_t i = 1; i < smoothed.size(); ++i) {
+            const double dx = smoothed[i].x() - smoothed[i - 1].x();
+            if (std::abs(dx) < 1e-12) continue;
+            const double slope =
+                    std::abs((smoothed[i].y() - smoothed[i - 1].y()) / dx);
+            local_slopes[i - 1] = slope;
+            if (slope > max_slope) {
+                max_slope = slope;
+                max_slope_idx = i - 1;
+            }
+        }
+
+        const double edge_slope_threshold =
+                std::max(slope_threshold * 2.0, median_slope * 8.0);
+        if (max_slope >= edge_slope_threshold) {
+            size_t run_begin = max_slope_idx;
+            while (run_begin > 0 &&
+                   local_slopes[run_begin - 1] >= edge_slope_threshold) {
+                --run_begin;
+            }
+            size_t run_end = max_slope_idx;
+            while (run_end + 1 < local_slopes.size() &&
+                   local_slopes[run_end + 1] >= edge_slope_threshold) {
+                ++run_end;
+            }
+            primary_edge.valid = true;
+            primary_edge.left_x = pts[run_begin].x();
+        }
+    }
+
     // Compute local slopes and flag flat regions
     std::vector<bool> is_flat(pts.size(), false);
     for (size_t i = 1; i < smoothed.size(); ++i) {
@@ -2068,27 +2121,44 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
         return {};
     }
 
-    // Preserve the measurement semantics: the left reference is the leftmost
-    // reliable support and the right reference is the rightmost reliable
-    // support. The reliability gates above prevent short terminal artifacts
-    // from being accepted as the right plane.
+    // Measurement support should describe the local surfaces adjacent to the
+    // main step transition. For the right side we keep the existing rightmost
+    // reliable support preference because it avoids short low valley artifacts;
+    // for the left side, choose the reliable segment closest to the transition
+    // instead of the leftmost stable fragment.
     const ScoredSegment* left_best = nullptr;
     const ScoredSegment* right_best = nullptr;
-    double best_left_x = std::numeric_limits<double>::max();
+    double best_left_edge_distance = std::numeric_limits<double>::max();
     double best_right_x = -std::numeric_limits<double>::max();
 
     for (const auto& candidate : scored) {
-        if (candidate.x_min < best_left_x ||
-            (std::abs(candidate.x_min - best_left_x) < 1e-9 &&
-             (!left_best || candidate.score > left_best->score))) {
-            best_left_x = candidate.x_min;
-            left_best = &candidate;
+        if (primary_edge.valid &&
+            candidate.x_center <= primary_edge.left_x + median_dx) {
+            const double edge_distance =
+                    std::max(0.0, primary_edge.left_x - candidate.x_max);
+            if (edge_distance < best_left_edge_distance ||
+                (std::abs(edge_distance - best_left_edge_distance) < 1e-9 &&
+                 (!left_best || candidate.score > left_best->score))) {
+                best_left_edge_distance = edge_distance;
+                left_best = &candidate;
+            }
         }
         if (candidate.x_max > best_right_x ||
             (std::abs(candidate.x_max - best_right_x) < 1e-9 &&
              (!right_best || candidate.score > right_best->score))) {
             best_right_x = candidate.x_max;
             right_best = &candidate;
+        }
+    }
+    if (!left_best) {
+        double best_left_x = std::numeric_limits<double>::max();
+        for (const auto& candidate : scored) {
+            if (candidate.x_min < best_left_x ||
+                (std::abs(candidate.x_min - best_left_x) < 1e-9 &&
+                 (!left_best || candidate.score > left_best->score))) {
+                best_left_x = candidate.x_min;
+                left_best = &candidate;
+            }
         }
     }
 
@@ -2207,6 +2277,7 @@ void GapStepDetection::detect_gap_step_dll_plot(
     if (debug_mode) {
         utility::filesystem::MakeDirectory_dll(
                 debug_path);  //"C:\\Users\\Administrator\\Desktop\\res\\bspline"
+        ensure_trailing_path_separator(debug_path);
     }
     // std::cout << "1" << std::endl;
 
@@ -2296,6 +2367,7 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
     // debug mode
     if (debug_mode) {
         utility::filesystem::MakeDirectory_dll(debug_path);
+        ensure_trailing_path_separator(debug_path);
     }
 
     // slice along y axis
@@ -3508,6 +3580,33 @@ void GapStepDetection::compute_step_width_dll(
     std::pair<Eigen::Vector2d, Eigen::Vector2d> right_line = line_segs[1];
     Eigen::Vector2d left_boundary = left_line.second;
     Eigen::Vector2d right_boundary = right_line.first;
+    if (limit_pts.size() >= 2) {
+        const double split_x =
+                0.5 * (left_line.second.x() + right_line.first.x());
+        bool found_left_limit = false;
+        bool found_right_limit = false;
+        double left_limit_x = left_boundary.x();
+        double right_limit_x = right_boundary.x();
+        for (const auto& pt : limit_pts) {
+            if (pt.x() <= split_x &&
+                (!found_left_limit || pt.x() > left_limit_x)) {
+                left_limit_x = pt.x();
+                found_left_limit = true;
+            }
+            if (pt.x() >= split_x &&
+                (!found_right_limit || pt.x() < right_limit_x)) {
+                right_limit_x = pt.x();
+                found_right_limit = true;
+            }
+        }
+        if (found_left_limit && found_right_limit &&
+            left_limit_x < right_limit_x) {
+            left_boundary = Eigen::Vector2d(
+                    left_limit_x, line_y_at_x(left_line, left_limit_x));
+            right_boundary = Eigen::Vector2d(
+                    right_limit_x, line_y_at_x(right_line, right_limit_x));
+        }
+    }
 
     intersections.emplace_back(std::vector<Eigen::Vector2d>{left_boundary});
     intersections.emplace_back(std::vector<Eigen::Vector2d>{right_boundary});
@@ -3596,6 +3695,28 @@ GapStepDetection::test_fast_path_detect_platforms(
         std::vector<Eigen::Vector2d>& raw_pts) {
     std::string fallback_reason;
     return fast_path_detect_platforms(raw_pts, &fallback_reason);
+}
+
+std::pair<Eigen::Vector2d, Eigen::Vector2d>
+GapStepDetection::test_compute_step_boundaries(
+        const std::vector<Eigen::Vector2d>& left_pts,
+        const std::vector<Eigen::Vector2d>& right_pts,
+        std::vector<Eigen::Vector2d> limit_pts) {
+    std::vector<std::vector<Eigen::Vector2d>> groups{left_pts, right_pts};
+    auto lines = line_segment(groups);
+    std::vector<Eigen::Vector2d> cloud_pts;
+    std::vector<Eigen::Vector2d> resampled_pts;
+    std::vector<std::vector<Eigen::Vector2d>> intersections;
+    std::vector<double> temp_width;
+    double left_height_threshold = 0.0;
+    double right_height_threshold = 0.0;
+    compute_step_width_dll(cloud_pts, resampled_pts, lines, intersections,
+                           temp_width, left_height_threshold,
+                           right_height_threshold, limit_pts, true);
+    if (intersections.size() <= 2 || intersections[2].size() < 2) {
+        return invalid_corner();
+    }
+    return {intersections[2][0], intersections[2][1]};
 }
 
 int GapStepDetection::test_mark_rejected_debug_images(

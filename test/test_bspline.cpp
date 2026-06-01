@@ -19,8 +19,15 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
-#include <opencv2/opencv.hpp>
 #include <string>
+
+#ifdef _WIN32
+#include <string.h>  // _stricmp
+#else
+#include <strings.h>  // strcasecmp
+#endif
+
+#include <opencv2/opencv.hpp>
 
 #include "3D/Mesh.h"
 #include "Cluster.h"
@@ -60,13 +67,21 @@ static void wait_for_key() {
 static bool has_tiff_ext(const char* path) {
     const char* ext = strrchr(path, '.');
     if (!ext) return false;
+#ifdef _WIN32
+    return _stricmp(ext, ".tiff") == 0 || _stricmp(ext, ".tif") == 0;
+#else
     return strcasecmp(ext, ".tiff") == 0 || strcasecmp(ext, ".tif") == 0;
+#endif
 }
 
 static bool has_ply_ext(const char* path) {
     const char* ext = strrchr(path, '.');
     if (!ext) return false;
+#ifdef _WIN32
+    return _stricmp(ext, ".ply") == 0;
+#else
     return strcasecmp(ext, ".ply") == 0;
+#endif
 }
 
 static bool parse_ratio(const char* str, Eigen::Vector3d& ratio) {
@@ -432,8 +447,8 @@ static int run_self_test(const char* debug_dir) {
     }
     for (int x = 421; x <= 439; ++x) {
         const double t = static_cast<double>(x - 421) / 18.0;
-        fast_path_short_tail_pts.emplace_back(
-                static_cast<double>(x), 83.0 * (1.0 - t) + -45.0 * t);
+        fast_path_short_tail_pts.emplace_back(static_cast<double>(x),
+                                              83.0 * (1.0 - t) + -45.0 * t);
     }
     for (int x = 440; x <= 460; ++x) {
         fast_path_short_tail_pts.emplace_back(static_cast<double>(x),
@@ -473,6 +488,91 @@ static int run_self_test(const char* debug_dir) {
         }
     }
 
+    std::vector<Eigen::Vector2d> fast_path_left_near_edge_pts;
+    fast_path_left_near_edge_pts.reserve(500);
+    for (int x = 0; x <= 60; ++x) {
+        fast_path_left_near_edge_pts.emplace_back(static_cast<double>(x),
+                                                  100.0 - 0.02 * x);
+    }
+    for (int x = 61; x <= 80; ++x) {
+        fast_path_left_near_edge_pts.emplace_back(static_cast<double>(x),
+                                                  98.8 - 0.9 * (x - 60));
+    }
+    for (int x = 81; x <= 260; ++x) {
+        fast_path_left_near_edge_pts.emplace_back(static_cast<double>(x),
+                                                  81.0 - 0.03 * (x - 81));
+    }
+    for (int x = 261; x <= 300; ++x) {
+        fast_path_left_near_edge_pts.emplace_back(static_cast<double>(x),
+                                                  75.6 - 0.55 * (x - 260));
+    }
+    for (int x = 301; x <= 420; ++x) {
+        fast_path_left_near_edge_pts.emplace_back(static_cast<double>(x),
+                                                  53.6 - 0.04 * (x - 301));
+    }
+    for (int x = 421; x <= 439; ++x) {
+        const double t = static_cast<double>(x - 421) / 18.0;
+        fast_path_left_near_edge_pts.emplace_back(static_cast<double>(x),
+                                                  48.8 * (1.0 - t) + -45.0 * t);
+    }
+    for (int x = 440; x <= 475; ++x) {
+        fast_path_left_near_edge_pts.emplace_back(static_cast<double>(x),
+                                                  -45.0 + 0.03 * (x - 440));
+    }
+    auto fast_left_edge_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    fast_path_left_near_edge_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_fast_path_left_near_edge.png",
+                              fast_path_left_near_edge_pts,
+                              fast_left_edge_groups);
+    }
+    if (fast_left_edge_groups.size() != 2 || fast_left_edge_groups[0].empty()) {
+        std::cerr << "expected fast path to find left and right supports for "
+                     "edge-adjacent selection"
+                  << std::endl;
+        return 1;
+    }
+    auto [fast_left_min_it, fast_left_max_it] = std::minmax_element(
+            fast_left_edge_groups[0].begin(), fast_left_edge_groups[0].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    if (fast_left_max_it->x() < 390.0 || fast_left_min_it->x() < 280.0) {
+        std::cerr << "fast path left support should be the local surface near "
+                     "the step edge, got x=["
+                  << fast_left_min_it->x() << ", " << fast_left_max_it->x()
+                  << "]" << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> endpoint_left_pts;
+    std::vector<Eigen::Vector2d> endpoint_right_pts;
+    for (int x = 300; x <= 400; ++x) {
+        endpoint_left_pts.emplace_back(static_cast<double>(x),
+                                       60.0 - 0.04 * (x - 300));
+    }
+    for (int x = 445; x <= 470; ++x) {
+        endpoint_right_pts.emplace_back(static_cast<double>(x),
+                                        -45.0 + 0.03 * (x - 445));
+    }
+    std::vector<Eigen::Vector2d> endpoint_limits{
+            endpoint_left_pts.front(), Eigen::Vector2d(420.0, 55.2),
+            Eigen::Vector2d(440.0, -45.0), endpoint_right_pts.back()};
+    auto projected_boundaries =
+            pipeline::GapStepDetection::test_compute_step_boundaries(
+                    endpoint_left_pts, endpoint_right_pts, endpoint_limits);
+    if (std::abs(projected_boundaries.first.x() - 420.0) > 1e-6 ||
+        std::abs(projected_boundaries.second.x() - 440.0) > 1e-6) {
+        std::cerr << "measurement boundaries should use limit points projected "
+                     "onto fitted support lines, got x=["
+                  << projected_boundaries.first.x() << ", "
+                  << projected_boundaries.second.x() << "]" << std::endl;
+        return 1;
+    }
+
     {
         std::string invalid_tiff_dir =
                 debug_dir ? std::string(debug_dir)
@@ -500,9 +600,8 @@ static int run_self_test(const char* debug_dir) {
         }
 
         auto invalid_cloud = std::make_shared<geometry::PointCloud>();
-        core::converter::tiff_to_pointcloud(
-                invalid_tiff_path, invalid_cloud, Eigen::Vector3d(1, 1, 100),
-                false);
+        core::converter::tiff_to_pointcloud(invalid_tiff_path, invalid_cloud,
+                                            Eigen::Vector3d(1, 1, 100), false);
         for (const auto& pt : invalid_cloud->points_) {
             if (pt.z() < -1e8) {
                 std::cerr << "TIFF invalid sentinel height leaked into "
