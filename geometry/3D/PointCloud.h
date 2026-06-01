@@ -123,6 +123,8 @@ public:
     // for tiff conversion
     size_t width_ = 0;
     size_t height_ = 0;
+    size_t source_point_count_ = 0;
+    size_t invalid_point_count_ = 0;
 };
 }  // namespace geometry
 }  // namespace hymson3d

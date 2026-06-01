@@ -1,8 +1,33 @@
 #include "Converter.h"
 
+#include <cmath>
+
 namespace hymson3d {
 namespace core {
 namespace converter {
+namespace {
+constexpr double kInvalidFloatTiffHeight = -1.0e6;
+constexpr double kInvalidInt16TiffHeight = -32000.0;
+
+bool is_valid_tiff_height(double raw_height) {
+    if (!std::isfinite(raw_height)) return false;
+    if (raw_height <= kInvalidFloatTiffHeight) return false;
+    if (raw_height <= kInvalidInt16TiffHeight) return false;
+    return true;
+}
+
+void set_tiff_metadata(geometry::PointCloud::Ptr pointcloud,
+                       int cols,
+                       int rows,
+                       size_t invalid_count) {
+    pointcloud->width_ = static_cast<size_t>(cols);
+    pointcloud->height_ = static_cast<size_t>(rows);
+    pointcloud->source_point_count_ =
+            static_cast<size_t>(cols) * static_cast<size_t>(rows);
+    pointcloud->invalid_point_count_ = invalid_count;
+}
+}  // namespace
+
 void tiff_to_pointcloud(const std::string& tiff_path,
                         const std::string& ply_path,
                         const Eigen::Vector3d& ratio,
@@ -12,19 +37,17 @@ void tiff_to_pointcloud(const std::string& tiff_path,
         return;
     }
     std::vector<Eigen::Vector3d> pcd;
-    // Reserve memory to avoid reallocations
-    pcd.resize(tiff_image.rows * tiff_image.cols);
-// Use OpenMP
-#pragma omp parallel for
+    pcd.reserve(tiff_image.rows * tiff_image.cols);
     for (int i = 0; i < tiff_image.rows; ++i) {
         const float* row_ptr =
                 tiff_image.ptr<float>(i);  // Get pointer to the row
 
         float y = i * ratio.y();
         for (int j = 0; j < tiff_image.cols; ++j) {
+            if (!is_valid_tiff_height(row_ptr[j])) continue;
             float x = j * ratio.x();
             float z = row_ptr[j] * ratio.z();
-            pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
+            pcd.emplace_back(x, y, z);
         }
     }
 
@@ -95,30 +118,36 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     }
     // FIXME: Add support for more data type
     std::vector<Eigen::Vector3d> pcd;
-    // Reserve memory to avoid reallocations
-    pcd.resize(tiff_image.rows * tiff_image.cols);
+    pcd.reserve(tiff_image.rows * tiff_image.cols);
+    size_t invalid_count = 0;
     if (tiff_image.type() == CV_32FC1) {
-#pragma omp parallel for
         for (int i = 0; i < tiff_image.rows; ++i) {
             const float* row_ptr =
                     tiff_image.ptr<float>(i);  // Get pointer to the row
             double y = i * ratio.y();
             for (int j = 0; j < tiff_image.cols; ++j) {
+                if (!is_valid_tiff_height(row_ptr[j])) {
+                    ++invalid_count;
+                    continue;
+                }
                 double x = j * ratio.x();
                 double z = row_ptr[j] * ratio.z();
-                pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
+                pcd.emplace_back(x, y, z);
             }
         }
     } else if (tiff_image.type() == CV_16SC1) {
         // stored data as 16-bit integer
-#pragma omp parallel for
         for (int i = 0; i < tiff_image.rows; ++i) {
             const short* row_ptr = tiff_image.ptr<short>(i);
             double y = i * ratio.y();
             for (int j = 0; j < tiff_image.cols; ++j) {
+                if (!is_valid_tiff_height(row_ptr[j])) {
+                    ++invalid_count;
+                    continue;
+                }
                 double x = j * ratio.x();
                 double z = row_ptr[j] * ratio.z();
-                pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
+                pcd.emplace_back(x, y, z);
             }
         }
     }
@@ -135,10 +164,10 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     }
 
     pointcloud->points_ = pcd;
-    pointcloud->width_ = tiff_image.cols;
-    pointcloud->height_ = tiff_image.rows;
-    LOG_DEBUG("Read from tiff file with pointcloud size: {}",
-              pointcloud->points_.size());
+    set_tiff_metadata(pointcloud, tiff_image.cols, tiff_image.rows,
+                      invalid_count);
+    LOG_DEBUG("Read from tiff file with pointcloud size: {}, invalid pixels: {}",
+              pointcloud->points_.size(), pointcloud->invalid_point_count_);
 }
 
 // fusion with grayscale intensity
@@ -170,21 +199,23 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     std::vector<Eigen::Vector3d> pcd;
     std::vector<float> intensities;
     // Reserve memory to avoid reallocations
-    pcd.resize(tiff_image.rows * tiff_image.cols);
-    intensities.resize(tiff_image.rows * tiff_image.cols);
+    pcd.reserve(tiff_image.rows * tiff_image.cols);
+    intensities.reserve(tiff_image.rows * tiff_image.cols);
+    size_t invalid_count = 0;
     if (tiff_image.type() == CV_32FC1) {
-// Use OpenMP
-#pragma omp parallel for
         for (int i = 0; i < tiff_image.rows; ++i) {
             const float* row_ptr = tiff_image.ptr<float>(i);
             const uint8_t* int_row_ptr = intensity_map.ptr<uint8_t>(i);
             double y = i * ratio.y();
             for (int j = 0; j < tiff_image.cols; ++j) {
+                if (!is_valid_tiff_height(row_ptr[j])) {
+                    ++invalid_count;
+                    continue;
+                }
                 double x = j * ratio.x();
                 double z = row_ptr[j] * ratio.z();
-                pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
-                intensities[i * tiff_image.cols + j] =
-                        static_cast<float>(int_row_ptr[j]);
+                pcd.emplace_back(x, y, z);
+                intensities.emplace_back(static_cast<float>(int_row_ptr[j]));
             }
         }
     } else if (tiff_image.type() == CV_16SC1) {
@@ -196,11 +227,14 @@ void tiff_to_pointcloud(const std::string& tiff_path,
             const uint8_t* int_row_ptr = intensity_map.ptr<uint8_t>(i);
             double y = i * ratio.y();
             for (int j = 0; j < tiff_image.cols; ++j) {
+                if (!is_valid_tiff_height(row_ptr[j])) {
+                    ++invalid_count;
+                    continue;
+                }
                 double x = j * ratio.x();
                 double z = row_ptr[j] * ratio.z();
-                pcd[i * tiff_image.cols + j] = Eigen::Vector3d(x, y, z);
-                intensities[i * tiff_image.cols + j] =
-                        static_cast<float>(int_row_ptr[j]);
+                pcd.emplace_back(x, y, z);
+                intensities.emplace_back(static_cast<float>(int_row_ptr[j]));
             }
         }
     }
@@ -219,10 +253,11 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     }
     pointcloud->points_ = pcd;
     pointcloud->intensities_ = intensities;
-    pointcloud->width_ = tiff_image.cols;
-    pointcloud->height_ = tiff_image.rows;
-    LOG_DEBUG("Read from tiff file with pointcloud(intensity) size: {}",
-              pointcloud->points_.size());
+    set_tiff_metadata(pointcloud, tiff_image.cols, tiff_image.rows,
+                      invalid_count);
+    LOG_DEBUG("Read from tiff file with pointcloud(intensity) size: {}, "
+              "invalid pixels: {}",
+              pointcloud->points_.size(), pointcloud->invalid_point_count_);
 }
 
 void mat_to_pointcloud(const cv::Mat& mat,
@@ -230,22 +265,25 @@ void mat_to_pointcloud(const cv::Mat& mat,
                        const Eigen::Vector3d& ratio,
                        bool remove_bottom) {
     std::vector<Eigen::Vector3d> pcd;
-    pcd.resize(mat.rows * mat.cols);
+    pcd.reserve(mat.rows * mat.cols);
+    size_t invalid_count = 0;
     for (int i = 0; i < mat.rows; ++i) {
         const float* row_ptr = mat.ptr<float>(i);
         double y = i * ratio.y();
-#pragma omp parallel for
         for (int j = 0; j < mat.cols; ++j) {
+            if (!is_valid_tiff_height(row_ptr[j])) {
+                ++invalid_count;
+                continue;
+            }
             double x = j * ratio.x();
             double z = row_ptr[j] * ratio.z();
-            pcd[i * mat.cols + j] = Eigen::Vector3d(x, y, z);
+            pcd.emplace_back(x, y, z);
         }
     }
     pointcloud->points_ = pcd;
-    pointcloud->width_ = mat.cols;
-    pointcloud->height_ = mat.rows;
-    LOG_DEBUG("Read from tiff file with pointcloud size: {}",
-              pointcloud->points_.size());
+    set_tiff_metadata(pointcloud, mat.cols, mat.rows, invalid_count);
+    LOG_DEBUG("Read from tiff file with pointcloud size: {}, invalid pixels: {}",
+              pointcloud->points_.size(), pointcloud->invalid_point_count_);
 }
 
 void pointcloud_to_mat(const geometry::PointCloud& pointcloud,

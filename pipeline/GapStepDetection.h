@@ -75,6 +75,8 @@ public:
     test_filtered_groups_dll(std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<double> test_group_line_slopes(
             std::vector<Eigen::Vector2d>& sampled_pts);
+    static std::vector<std::vector<Eigen::Vector2d>>
+    test_fast_path_detect_platforms(std::vector<Eigen::Vector2d>& raw_pts);
     static int test_mark_rejected_debug_images(const std::string& debug_dir);
     // 3D consistency filter self-test entry
     static int test_3d_consistency_filter(

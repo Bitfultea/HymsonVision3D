@@ -10,6 +10,8 @@ PointCloud &PointCloud::Clear() {
     covariances_.clear();
     width_ = 0;
     height_ = 0;
+    source_point_count_ = 0;
+    invalid_point_count_ = 0;
     return *this;
 }
 

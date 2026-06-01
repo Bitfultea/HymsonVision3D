@@ -424,6 +424,109 @@ static int run_self_test(const char* debug_dir) {
         return 1;
     }
 
+    std::vector<Eigen::Vector2d> fast_path_short_tail_pts;
+    fast_path_short_tail_pts.reserve(480);
+    for (int x = 0; x <= 420; ++x) {
+        fast_path_short_tail_pts.emplace_back(static_cast<double>(x),
+                                              100.0 - 0.04 * x);
+    }
+    for (int x = 421; x <= 439; ++x) {
+        const double t = static_cast<double>(x - 421) / 18.0;
+        fast_path_short_tail_pts.emplace_back(
+                static_cast<double>(x), 83.0 * (1.0 - t) + -45.0 * t);
+    }
+    for (int x = 440; x <= 460; ++x) {
+        fast_path_short_tail_pts.emplace_back(static_cast<double>(x),
+                                              -45.0 + 0.04 * (x - 440));
+    }
+    for (int x = 461; x <= 469; ++x) {
+        fast_path_short_tail_pts.emplace_back(static_cast<double>(x),
+                                              -42.0 + 3.0 * (x - 461));
+    }
+    for (int x = 470; x <= 475; ++x) {
+        fast_path_short_tail_pts.emplace_back(static_cast<double>(x),
+                                              -16.0 + 0.01 * (x - 470));
+    }
+    auto fast_path_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    fast_path_short_tail_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_fast_path_short_tail.png",
+                              fast_path_short_tail_pts, fast_path_groups);
+    }
+    if (!fast_path_groups.empty()) {
+        auto [fast_right_min_it, fast_right_max_it] = std::minmax_element(
+                fast_path_groups[1].begin(), fast_path_groups[1].end(),
+                [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                    return a.x() < b.x();
+                });
+        const double right_span =
+                fast_right_max_it->x() - fast_right_min_it->x();
+        if (fast_right_min_it->x() > 462.0 || right_span < 12.0) {
+            std::cerr << "fast path should not accept a short terminal "
+                         "artifact as the right platform, got x=["
+                      << fast_right_min_it->x() << ", "
+                      << fast_right_max_it->x() << "]" << std::endl;
+            return 1;
+        }
+    }
+
+    {
+        std::string invalid_tiff_dir =
+                debug_dir ? std::string(debug_dir)
+                          : utility::filesystem::GetTempDirectoryPath();
+        if (!invalid_tiff_dir.empty() && invalid_tiff_dir.back() != '/')
+            invalid_tiff_dir += "/";
+        invalid_tiff_dir += "self_test_invalid_tiff/";
+        utility::filesystem::MakeDirectoryHierarchy(invalid_tiff_dir);
+
+        cv::Mat invalid_tiff(2, 4, CV_32FC1);
+        invalid_tiff.at<float>(0, 0) = -3300.0f;
+        invalid_tiff.at<float>(0, 1) = -3310.0f;
+        invalid_tiff.at<float>(0, 2) = -21474836.0f;
+        invalid_tiff.at<float>(0, 3) = -3320.0f;
+        invalid_tiff.at<float>(1, 0) = -3330.0f;
+        invalid_tiff.at<float>(1, 1) = -21474836.0f;
+        invalid_tiff.at<float>(1, 2) = -3340.0f;
+        invalid_tiff.at<float>(1, 3) = -3350.0f;
+        const std::string invalid_tiff_path =
+                invalid_tiff_dir + "invalid_height.tiff";
+        if (!cv::imwrite(invalid_tiff_path, invalid_tiff)) {
+            std::cerr << "failed to write invalid TIFF self-test input"
+                      << std::endl;
+            return 1;
+        }
+
+        auto invalid_cloud = std::make_shared<geometry::PointCloud>();
+        core::converter::tiff_to_pointcloud(
+                invalid_tiff_path, invalid_cloud, Eigen::Vector3d(1, 1, 100),
+                false);
+        for (const auto& pt : invalid_cloud->points_) {
+            if (pt.z() < -1e8) {
+                std::cerr << "TIFF invalid sentinel height leaked into "
+                             "point cloud: z="
+                          << pt.z() << std::endl;
+                return 1;
+            }
+        }
+        if (invalid_cloud->points_.size() != 6) {
+            std::cerr << "expected 6 valid points after filtering invalid "
+                         "TIFF pixels, got "
+                      << invalid_cloud->points_.size() << std::endl;
+            return 1;
+        }
+        if (invalid_cloud->source_point_count_ != 8 ||
+            invalid_cloud->invalid_point_count_ != 2) {
+            std::cerr << "expected TIFF metadata source=8 invalid=2, got "
+                      << "source=" << invalid_cloud->source_point_count_
+                      << " invalid=" << invalid_cloud->invalid_point_count_
+                      << std::endl;
+            return 1;
+        }
+    }
+
     std::string mark_debug_dir =
             debug_dir ? std::string(debug_dir)
                       : utility::filesystem::GetTempDirectoryPath();
