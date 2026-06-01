@@ -548,6 +548,137 @@ static int run_self_test(const char* debug_dir) {
         return 1;
     }
 
+    std::vector<Eigen::Vector2d> missing_gap_pts;
+    missing_gap_pts.reserve(460);
+    for (int x = 0; x <= 420; ++x) {
+        missing_gap_pts.emplace_back(static_cast<double>(x), 80.0 - 0.04 * x);
+    }
+    for (int x = 440; x <= 475; ++x) {
+        missing_gap_pts.emplace_back(static_cast<double>(x),
+                                     -45.0 + 0.03 * (x - 440));
+    }
+    auto missing_gap_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    missing_gap_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_missing_gap.png",
+                              missing_gap_pts, missing_gap_groups);
+    }
+    if (missing_gap_groups.size() != 2 || missing_gap_groups[0].empty() ||
+        missing_gap_groups[1].empty()) {
+        std::cerr << "missing-gap fast path should find both visible support "
+                     "surfaces"
+                  << std::endl;
+        return 1;
+    }
+    auto [missing_left_min_it, missing_left_max_it] = std::minmax_element(
+            missing_gap_groups[0].begin(), missing_gap_groups[0].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    auto [missing_right_min_it, missing_right_max_it] = std::minmax_element(
+            missing_gap_groups[1].begin(), missing_gap_groups[1].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    const double missing_right_span =
+            missing_right_max_it->x() - missing_right_min_it->x();
+    if (missing_left_max_it->x() < 415.0 || missing_right_min_it->x() > 445.0 ||
+        missing_right_span < 20.0) {
+        std::cerr << "missing-gap supports should be adjacent to the no-data "
+                     "gap, got left x=["
+                  << missing_left_min_it->x() << ", "
+                  << missing_left_max_it->x() << "] right x=["
+                  << missing_right_min_it->x() << ", "
+                  << missing_right_max_it->x() << "]" << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> missing_gap_left_low_pts;
+    missing_gap_left_low_pts.reserve(460);
+    for (int x = 0; x <= 420; ++x) {
+        missing_gap_left_low_pts.emplace_back(static_cast<double>(x),
+                                              5.0 + 0.01 * x);
+    }
+    for (int x = 440; x <= 475; ++x) {
+        missing_gap_left_low_pts.emplace_back(static_cast<double>(x),
+                                              20.0 + 0.02 * (x - 440));
+    }
+    auto missing_left_low_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    missing_gap_left_low_pts);
+    if (missing_left_low_groups.size() != 2 ||
+        missing_left_low_groups[0].empty() ||
+        missing_left_low_groups[1].empty()) {
+        std::cerr << "missing-gap fast path should handle left-low/right-high "
+                     "surfaces"
+                  << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> missing_gap_equal_height_pts;
+    missing_gap_equal_height_pts.reserve(460);
+    for (int x = 0; x <= 420; ++x) {
+        missing_gap_equal_height_pts.emplace_back(static_cast<double>(x), 12.0);
+    }
+    for (int x = 440; x <= 475; ++x) {
+        missing_gap_equal_height_pts.emplace_back(static_cast<double>(x), 12.0);
+    }
+    auto missing_equal_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    missing_gap_equal_height_pts);
+    if (missing_equal_groups.size() != 2 || missing_equal_groups[0].empty() ||
+        missing_equal_groups[1].empty()) {
+        std::cerr << "missing-gap fast path should handle equal-height surfaces"
+                  << std::endl;
+        return 1;
+    }
+    auto [equal_left_min_it, equal_left_max_it] = std::minmax_element(
+            missing_equal_groups[0].begin(), missing_equal_groups[0].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    auto [equal_right_min_it, equal_right_max_it] = std::minmax_element(
+            missing_equal_groups[1].begin(), missing_equal_groups[1].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    std::vector<Eigen::Vector2d> equal_limits{
+            *equal_left_min_it, *equal_left_max_it, *equal_right_min_it,
+            *equal_right_max_it};
+    auto equal_boundaries =
+            pipeline::GapStepDetection::test_compute_step_boundaries(
+                    missing_equal_groups[0], missing_equal_groups[1],
+                    equal_limits);
+    if (std::abs(equal_boundaries.second.y() - equal_boundaries.first.y()) >
+        1e-6) {
+        std::cerr
+                << "equal-height missing-gap surfaces should measure near zero "
+                   "signed height, got "
+                << equal_boundaries.second.y() - equal_boundaries.first.y()
+                << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> isolated_missing_pts;
+    isolated_missing_pts.reserve(100);
+    for (int x = 0; x <= 100; ++x) {
+        if (x == 50 || x == 51) continue;
+        isolated_missing_pts.emplace_back(static_cast<double>(x),
+                                          30.0 - 0.02 * x);
+    }
+    auto isolated_missing_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    isolated_missing_pts);
+    if (!isolated_missing_groups.empty()) {
+        std::cerr << "one or two isolated missing pixels should not be treated "
+                     "as a measurable missing gap"
+                  << std::endl;
+        return 1;
+    }
+
     std::vector<Eigen::Vector2d> endpoint_left_pts;
     std::vector<Eigen::Vector2d> endpoint_right_pts;
     for (int x = 300; x <= 400; ++x) {
