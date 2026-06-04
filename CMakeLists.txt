@@ -136,6 +136,7 @@ endif()
 # Unit test
 option(BUILD_UNIT_TESTS "Build Unit Tests" ON)
 if(BUILD_UNIT_TESTS)
+  enable_testing()
   add_subdirectory(test) 
 endif()
 

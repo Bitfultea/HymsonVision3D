@@ -96,6 +96,15 @@ set_target_properties(bspline_test PROPERTIES
                         RUNTIME_OUTPUT_DIRECTORY ${exe_path})
 endif()
 
+add_executable(
+  gap_step_width_test
+  test_gap_step_width.cpp
+)
+if(WIN32)
+set_target_properties(gap_step_width_test PROPERTIES
+                        RUNTIME_OUTPUT_DIRECTORY ${exe_path})
+endif()
+
 ##########################################################
 add_executable(
 	tiff2ply
@@ -203,6 +212,20 @@ target_compile_definitions(bspline_test PRIVATE HYMSON3D_TESTING)
 if(UNIX AND NOT APPLE)
   target_link_libraries(bspline_test usb-1.0)
 endif()
+
+target_link_libraries(
+  gap_step_width_test
+  utility_lib
+  core_lib
+  geometry_3d_lib
+  pipeline_testing
+  core_lib
+)
+target_compile_definitions(gap_step_width_test PRIVATE HYMSON3D_TESTING)
+if(UNIX AND NOT APPLE)
+  target_link_libraries(gap_step_width_test usb-1.0)
+endif()
+add_test(NAME gap_step_width_test COMMAND gap_step_width_test)
 
 
 target_link_libraries(

@@ -2,6 +2,10 @@
 #include "Normal.h"
 #include "fmtfallback.h"
 
+#include <limits>
+#include <string>
+#include <vector>
+
 namespace hymson3d {
 namespace pipeline {
 class GapStepDetection {
@@ -69,6 +73,20 @@ public:
                                    std::vector<std::vector<double>>& temp_res,
                                    bool LHT);
 #ifdef HYMSON3D_TESTING
+    struct ThresholdWidthTestResult {
+        double width = 0.0;
+        bool valid = false;
+        int lower_line_index = -1;
+        Eigen::Vector2d left_intersection =
+                Eigen::Vector2d::Constant(
+                        std::numeric_limits<double>::quiet_NaN());
+        Eigen::Vector2d right_intersection =
+                Eigen::Vector2d::Constant(
+                        std::numeric_limits<double>::quiet_NaN());
+        std::pair<Eigen::Vector2d, Eigen::Vector2d> shifted_line;
+        std::string reason;
+    };
+
     static std::vector<std::vector<Eigen::Vector2d>>
     test_group_by_derivative_dll(std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<std::vector<Eigen::Vector2d>>
@@ -77,6 +95,14 @@ public:
             std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<std::vector<Eigen::Vector2d>>
     test_fast_path_detect_platforms(std::vector<Eigen::Vector2d>& raw_pts);
+    static ThresholdWidthTestResult test_compute_threshold_width(
+            const std::vector<Eigen::Vector2d>& profile,
+            const std::pair<Eigen::Vector2d, Eigen::Vector2d>& left_line,
+            const std::pair<Eigen::Vector2d, Eigen::Vector2d>& right_line,
+            double height_threshold,
+            double gap_left_x,
+            double gap_right_x);
+    static int test_width_height_independence();
     static std::pair<Eigen::Vector2d, Eigen::Vector2d>
     test_compute_step_boundaries(const std::vector<Eigen::Vector2d>& left_pts,
                                  const std::vector<Eigen::Vector2d>& right_pts,

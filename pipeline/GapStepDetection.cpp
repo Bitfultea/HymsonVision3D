@@ -88,6 +88,24 @@ struct RightSurfaceSearch {
     double valley_x = 0.0;
 };
 
+struct ThresholdWidthResult {
+    double width = 0.0;
+    bool valid = false;
+    int lower_line_index = -1;
+    Eigen::Vector2d left_intersection =
+            Eigen::Vector2d::Constant(
+                    std::numeric_limits<double>::quiet_NaN());
+    Eigen::Vector2d right_intersection =
+            Eigen::Vector2d::Constant(
+                    std::numeric_limits<double>::quiet_NaN());
+    std::pair<Eigen::Vector2d, Eigen::Vector2d> shifted_line = {
+            Eigen::Vector2d::Constant(
+                    std::numeric_limits<double>::quiet_NaN()),
+            Eigen::Vector2d::Constant(
+                    std::numeric_limits<double>::quiet_NaN())};
+    std::string reason;
+};
+
 struct SliceMeasurement {
     int index = -1;
     double width = 0.0;
@@ -111,7 +129,9 @@ struct SliceMeasurement {
     double left_residual = 0.0;
     double right_residual = 0.0;
     bool accepted = false;
+    bool width_accepted = true;
     std::string reject_reason;
+    std::string width_reject_reason;
 };
 
 using SliceLineSegments =
@@ -122,6 +142,21 @@ void set_measurement_height(SliceMeasurement& measurement,
     measurement.signed_height = signed_height;
     measurement.height_abs = std::abs(signed_height);
     measurement.height = measurement.height_abs;
+}
+
+void reject_measurement(SliceMeasurement& measurement,
+                        const std::string& reason) {
+    measurement.accepted = false;
+    measurement.width_accepted = false;
+    measurement.reject_reason = reason;
+    if (measurement.width_reject_reason.empty())
+        measurement.width_reject_reason = reason;
+}
+
+void reject_measurement_width(SliceMeasurement& measurement,
+                              const std::string& reason) {
+    measurement.width_accepted = false;
+    measurement.width_reject_reason = reason;
 }
 
 std::vector<Eigen::Vector2d> filter_surface_group(
@@ -239,6 +274,160 @@ double median_positive_x_step(const std::vector<Eigen::Vector2d>& pts) {
     std::nth_element(x_steps.begin(), x_steps.begin() + x_steps.size() / 2,
                      x_steps.end());
     return x_steps[x_steps.size() / 2];
+}
+
+const Eigen::Vector2d& endpoint_nearest_x(
+        const std::pair<Eigen::Vector2d, Eigen::Vector2d>& line,
+        double x) {
+    return std::abs(line.first.x() - x) <= std::abs(line.second.x() - x)
+                   ? line.first
+                   : line.second;
+}
+
+ThresholdWidthResult compute_threshold_width_from_profile(
+        const std::vector<Eigen::Vector2d>& profile,
+        const std::pair<Eigen::Vector2d, Eigen::Vector2d>& left_line,
+        const std::pair<Eigen::Vector2d, Eigen::Vector2d>& right_line,
+        double height_threshold,
+        double gap_left_x,
+        double gap_right_x) {
+    ThresholdWidthResult result;
+    if (!std::isfinite(gap_left_x) || !std::isfinite(gap_right_x) ||
+        gap_left_x >= gap_right_x) {
+        result.reason = "invalid_gap_bounds";
+        return result;
+    }
+
+    const double threshold = std::abs(height_threshold);
+    if (!std::isfinite(threshold) || threshold <= 1e-12) {
+        result.reason = "non_positive_threshold";
+        return result;
+    }
+
+    const double gap_center_x = 0.5 * (gap_left_x + gap_right_x);
+    const auto& left_near_gap = endpoint_nearest_x(left_line, gap_left_x);
+    const auto& right_near_gap = endpoint_nearest_x(right_line, gap_right_x);
+    result.lower_line_index =
+            left_near_gap.y() <= right_near_gap.y() ? 0 : 1;
+    // Measure width on a horizontal line offset below the lower near-gap
+    // reference endpoint, independent of either reference line's slope.
+    const double shifted_y =
+            (result.lower_line_index == 0 ? left_near_gap.y()
+                                          : right_near_gap.y()) -
+            threshold;
+    result.shifted_line = {
+            Eigen::Vector2d(gap_left_x, shifted_y),
+            Eigen::Vector2d(gap_right_x, shifted_y)};
+
+    std::vector<Eigen::Vector2d> finite_pts;
+    finite_pts.reserve(profile.size());
+    for (const auto& pt : profile) {
+        if (std::isfinite(pt.x()) && std::isfinite(pt.y()))
+            finite_pts.push_back(pt);
+    }
+    if (finite_pts.size() < 2) {
+        result.reason = "too_few_profile_points";
+        return result;
+    }
+    std::sort(finite_pts.begin(), finite_pts.end(),
+              [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                  if (a.x() == b.x()) return a.y() < b.y();
+                  return a.x() < b.x();
+              });
+
+    std::vector<Eigen::Vector2d> pts;
+    pts.reserve(finite_pts.size());
+    for (size_t i = 0; i < finite_pts.size();) {
+        size_t end = i + 1;
+        double sum_y = finite_pts[i].y();
+        while (end < finite_pts.size() &&
+               std::abs(finite_pts[end].x() - finite_pts[i].x()) <= 1e-12) {
+            sum_y += finite_pts[end].y();
+            ++end;
+        }
+        pts.emplace_back(finite_pts[i].x(),
+                         sum_y / static_cast<double>(end - i));
+        i = end;
+    }
+
+    const double median_dx = median_positive_x_step(pts);
+    if (median_dx <= 1e-12) {
+        result.reason = "invalid_profile_spacing";
+        return result;
+    }
+    const double max_interpolation_gap = 2.5 * median_dx;
+    const double residual_epsilon = std::max(1e-9, threshold * 1e-7);
+    const double x_epsilon = std::max(1e-9, median_dx * 1e-6);
+    std::vector<Eigen::Vector2d> intersections;
+
+    auto shifted_line_y = [&](double x) {
+        return line_y_at_x(result.shifted_line, x);
+    };
+    auto append_intersection = [&](double x) {
+        if (x < gap_left_x - x_epsilon || x > gap_right_x + x_epsilon) return;
+        const double clipped_x = std::clamp(x, gap_left_x, gap_right_x);
+        if (!intersections.empty() &&
+            std::abs(intersections.back().x() - clipped_x) <= x_epsilon) {
+            return;
+        }
+        intersections.emplace_back(clipped_x, shifted_line_y(clipped_x));
+    };
+
+    for (size_t i = 0; i < pts.size(); ++i) {
+        if (pts[i].x() >= gap_left_x - x_epsilon &&
+            pts[i].x() <= gap_right_x + x_epsilon &&
+            std::abs(pts[i].y() - shifted_line_y(pts[i].x())) <=
+                    residual_epsilon) {
+            append_intersection(pts[i].x());
+        }
+        if (i + 1 >= pts.size()) continue;
+
+        const auto& a = pts[i];
+        const auto& b = pts[i + 1];
+        const double dx = b.x() - a.x();
+        if (dx <= 1e-12 || dx > max_interpolation_gap) continue;
+        if (b.x() < gap_left_x - x_epsilon ||
+            a.x() > gap_right_x + x_epsilon) {
+            continue;
+        }
+
+        const double ra = a.y() - shifted_line_y(a.x());
+        const double rb = b.y() - shifted_line_y(b.x());
+        if (ra * rb >= 0.0) continue;
+        const double t = ra / (ra - rb);
+        append_intersection(a.x() + t * dx);
+    }
+
+    if (intersections.size() < 2) {
+        result.reason = "insufficient_intersections";
+        return result;
+    }
+    std::sort(intersections.begin(), intersections.end(),
+              [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                  return a.x() < b.x();
+              });
+
+    const auto left_it = std::find_if(
+            intersections.begin(), intersections.end(),
+            [&](const Eigen::Vector2d& pt) {
+                return pt.x() <= gap_center_x + x_epsilon;
+            });
+    const auto right_it = std::find_if(
+            intersections.rbegin(), intersections.rend(),
+            [&](const Eigen::Vector2d& pt) {
+                return pt.x() >= gap_center_x - x_epsilon;
+            });
+    if (left_it == intersections.end() || right_it == intersections.rend() ||
+        right_it->x() - left_it->x() <= x_epsilon) {
+        result.reason = "no_pair_around_gap_center";
+        return result;
+    }
+
+    result.left_intersection = *left_it;
+    result.right_intersection = *right_it;
+    result.width = result.right_intersection.x() - result.left_intersection.x();
+    result.valid = true;
+    return result;
 }
 
 double estimate_surface_slope_limit(const std::vector<Eigen::Vector2d>& pts) {
@@ -546,18 +735,42 @@ void draw_measurement_overlay(
             Eigen::Vector2d(right_boundary.x(), left_boundary.y()), x_min,
             x_max, y_min, y_max, y_shift);
 
-    cv::line(image, left_px, right_height_px, cv::Scalar(0, 0, 0), 2);
+    cv::line(image, left_px, right_height_px, cv::Scalar(90, 90, 90), 1);
     cv::line(image, right_height_px, right_px, cv::Scalar(128, 0, 128), 1);
     cv::drawMarker(image, left_px, cv::Scalar(0, 0, 0), cv::MARKER_SQUARE, 14,
                    2);
     cv::drawMarker(image, right_px, cv::Scalar(0, 0, 0), cv::MARKER_SQUARE, 14,
                    2);
 
+    if (intersections.size() > 4 && intersections[4].size() >= 2) {
+        draw_line_on_plot(image,
+                          {intersections[4][0], intersections[4][1]}, x_min,
+                          x_max, y_min, y_max, cv::Scalar(0, 165, 255), 2,
+                          y_shift);
+    }
+
+    double width = 0.0;
+    if (intersections.size() > 3 && intersections[3].size() >= 2) {
+        const Eigen::Vector2d width_left = intersections[3][0];
+        const Eigen::Vector2d width_right = intersections[3][1];
+        const cv::Point width_left_px =
+                point_on_plot(width_left, x_min, x_max, y_min, y_max, y_shift);
+        const cv::Point width_right_px = point_on_plot(
+                width_right, x_min, x_max, y_min, y_max, y_shift);
+        cv::line(image, width_left_px, width_right_px, cv::Scalar(0, 100, 255),
+                 2, cv::LINE_AA);
+        cv::drawMarker(image, width_left_px, cv::Scalar(0, 100, 255),
+                       cv::MARKER_CROSS, 14, 2);
+        cv::drawMarker(image, width_right_px, cv::Scalar(0, 100, 255),
+                       cv::MARKER_CROSS, 14, 2);
+        width = std::abs(width_right.x() - width_left.x());
+    }
+
     std::ostringstream label;
     const double signed_height = right_boundary.y() - left_boundary.y();
     label << std::fixed << std::setprecision(3)
-          << "W=" << std::abs(right_boundary.x() - left_boundary.x())
-          << " H=" << std::abs(signed_height) << " S=" << signed_height;
+          << "W=" << width << " H=" << std::abs(signed_height)
+          << " S=" << signed_height;
     cv::putText(image, label.str(), cv::Point(8, image.rows - 12),
                 cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1,
                 cv::LINE_AA);
@@ -576,6 +789,12 @@ double trimmed_mean(std::vector<double> values) {
     double sum = 0.0;
     for (size_t i = begin; i < end; ++i) sum += values[i];
     return sum / static_cast<double>(end - begin);
+}
+
+double mean_value(const std::vector<double>& values) {
+    if (values.empty()) return 0.0;
+    return std::accumulate(values.begin(), values.end(), 0.0) /
+           static_cast<double>(values.size());
 }
 
 double median_value(std::vector<double> values) {
@@ -611,13 +830,13 @@ std::vector<SliceMeasurement> collect_slice_measurements(
 
         if (std::isnan(corners[i].first.x()) ||
             std::isnan(corners[i].second.x())) {
-            measurement.reject_reason = "invalid_corner";
+            reject_measurement(measurement, "invalid_corner");
             measurements.push_back(measurement);
             continue;
         }
 
         if (corners[i].second.x() <= corners[i].first.x()) {
-            measurement.reject_reason = "right_before_left";
+            reject_measurement(measurement, "right_before_left");
             measurements.push_back(measurement);
             continue;
         }
@@ -628,12 +847,14 @@ std::vector<SliceMeasurement> collect_slice_measurements(
                                                corners[i].first.x());
         set_measurement_height(measurement,
                                corners[i].second.y() - corners[i].first.y());
-        if (measurement.width == -255.0 || measurement.width <= 0.0 ||
-            !std::isfinite(measurement.width) ||
-            !std::isfinite(measurement.height)) {
-            measurement.reject_reason = "invalid_measurement";
+        if (!std::isfinite(measurement.height)) {
+            reject_measurement(measurement, "invalid_height");
             measurements.push_back(measurement);
             continue;
+        }
+        if (measurement.width == -255.0 || measurement.width < 0.0 ||
+            !std::isfinite(measurement.width)) {
+            reject_measurement_width(measurement, "invalid_width");
         }
 
         // Store surface point sets if provided
@@ -650,37 +871,42 @@ std::vector<SliceMeasurement> collect_slice_measurements(
     std::vector<double> heights;
     for (const auto& measurement : measurements) {
         if (!measurement.accepted) continue;
-        widths.push_back(measurement.width);
+        if (measurement.width_accepted) widths.push_back(measurement.width);
         heights.push_back(measurement.height_abs);
     }
-    if (widths.size() < 8) return measurements;
+    const bool filter_widths = widths.size() >= 8;
+    const bool filter_heights = heights.size() >= 8;
+    if (!filter_widths && !filter_heights) return measurements;
 
     const double width_median = median_value(widths);
     const double height_median = median_value(heights);
-    const double width_sigma =
-            1.4826 * median_absolute_deviation(widths, width_median);
-    const double height_sigma =
-            1.4826 * median_absolute_deviation(heights, height_median);
-    const double width_limit =
-            std::max({3.0 * width_sigma, std::abs(width_median) * 0.2, 1.0});
-    const double height_limit =
-            std::max({3.0 * height_sigma, std::abs(height_median) * 0.2, 1.0});
+    const double width_sigma = filter_widths
+                                       ? 1.4826 * median_absolute_deviation(
+                                                        widths, width_median)
+                                       : 0.0;
+    const double height_sigma = filter_heights
+                                        ? 1.4826 * median_absolute_deviation(
+                                                         heights, height_median)
+                                        : 0.0;
+    const double width_limit = std::max(
+            {3.0 * width_sigma, std::abs(width_median) * 0.2, 1.0});
+    const double height_limit = std::max(
+            {3.0 * height_sigma, std::abs(height_median) * 0.2, 1.0});
 
     for (auto& measurement : measurements) {
         if (!measurement.accepted) continue;
         const bool width_outlier =
+                filter_widths && measurement.width_accepted &&
+                measurement.width > 0.0 &&
                 std::abs(measurement.width - width_median) > width_limit;
-        const bool height_outlier =
+        const bool height_outlier = filter_heights &&
                 std::abs(measurement.height_abs - height_median) > height_limit;
-        if (width_outlier || height_outlier) {
-            measurement.accepted = false;
-            if (width_outlier && height_outlier) {
-                measurement.reject_reason = "width_height_outlier";
-            } else if (width_outlier) {
-                measurement.reject_reason = "width_outlier";
-            } else {
-                measurement.reject_reason = "height_outlier";
-            }
+        if (height_outlier) {
+            reject_measurement(measurement, width_outlier
+                                                    ? "width_height_outlier"
+                                                    : "height_outlier");
+        } else if (width_outlier) {
+            reject_measurement_width(measurement, "width_outlier");
         }
     }
 
@@ -704,8 +930,7 @@ void annotate_slice_quality(std::vector<SliceMeasurement>& measurements,
                 static_cast<double>(expected_points);
         if (measurement.accepted &&
             measurement.valid_ratio < kMinValidSliceRatio) {
-            measurement.accepted = false;
-            measurement.reject_reason = "invalid_height_slice";
+            reject_measurement(measurement, "invalid_height_slice");
         }
     }
 }
@@ -718,20 +943,22 @@ void fill_result_from_measurements(
     std::vector<double> widths;
     std::vector<double> heights;
     for (const auto& measurement : measurements) {
-        if (!measurement.accepted) continue;
-        widths.push_back(measurement.width);
-        heights.push_back(measurement.height_abs);
-        if (temp_res != nullptr) {
-            (*temp_res)[0].emplace_back(measurement.width);
-            (*temp_res)[1].emplace_back(measurement.height_abs);
+        if (measurement.accepted) {
+            heights.push_back(measurement.height_abs);
+            if (temp_res != nullptr)
+                (*temp_res)[1].emplace_back(measurement.height_abs);
+        }
+        if (measurement.accepted && measurement.width_accepted) {
+            widths.push_back(measurement.width);
+            if (temp_res != nullptr)
+                (*temp_res)[0].emplace_back(measurement.width);
         }
     }
 
+    gap_step = heights.empty() ? 0.0 : trimmed_mean(heights);
     if (!widths.empty()) {
-        gap_step = trimmed_mean(heights);
-        step_width = trimmed_mean(widths);
+        step_width = mean_value(widths);
     } else {
-        gap_step = 0.0;
         step_width = 0.0;
     }
 }
@@ -749,7 +976,8 @@ void write_slice_measurements_csv(
     if (!ofs.is_open()) return;
     ofs << "slice,width,height_abs,signed_height,left_x,left_y,right_x,right_y,"
            "valid_points,expected_points,valid_ratio,"
-           "left_residual,right_residual,accepted,reject_reason\n";
+           "left_residual,right_residual,accepted,width_accepted,"
+           "reject_reason,width_reject_reason\n";
     for (const auto& measurement : measurements) {
         ofs << measurement.index << "," << measurement.width << ","
             << measurement.height_abs << "," << measurement.signed_height << ","
@@ -761,7 +989,9 @@ void write_slice_measurements_csv(
             << measurement.valid_ratio << "," << measurement.left_residual
             << "," << measurement.right_residual << ","
             << (measurement.accepted ? 1 : 0) << ","
-            << measurement.reject_reason << "\n";
+            << (measurement.width_accepted ? 1 : 0) << ","
+            << measurement.reject_reason << ","
+            << measurement.width_reject_reason << "\n";
     }
 }
 
@@ -778,16 +1008,26 @@ std::string sanitize_filename_token(const std::string& text) {
     return token.empty() ? "rejected" : token;
 }
 
-void remove_stale_rejected_debug_images(const std::string& path, int index) {
+void remove_stale_rejected_debug_images(const std::string& path,
+                                        int index,
+                                        const std::string& keep_path = "") {
     std::vector<std::string> filenames;
     if (!utility::filesystem::ListFilesInDirectory(path, filenames)) return;
 
-    const std::string prefix =
-            path + "group_pts" + std::to_string(index) + "__REJECTED_";
+    const std::string base = path + "group_pts" + std::to_string(index);
+    const std::vector<std::string> prefixes{
+            base + "__REJECTED_", base + "__WIDTH_REJECTED_"};
     const std::string suffix = ".jpg";
     for (const auto& filename : filenames) {
-        if (filename.size() < prefix.size() + suffix.size()) continue;
-        if (filename.compare(0, prefix.size(), prefix) != 0) continue;
+        bool matches_prefix = false;
+        for (const auto& prefix : prefixes) {
+            if (filename.size() >= prefix.size() + suffix.size() &&
+                filename.compare(0, prefix.size(), prefix) == 0) {
+                matches_prefix = true;
+                break;
+            }
+        }
+        if (!matches_prefix || filename == keep_path) continue;
         if (filename.compare(filename.size() - suffix.size(), suffix.size(),
                              suffix) != 0) {
             continue;
@@ -806,18 +1046,26 @@ void mark_rejected_debug_images(
     if (path.back() != '/' && path.back() != '\\') path += "/";
 
     for (const auto& measurement : measurements) {
-        remove_stale_rejected_debug_images(path, measurement.index);
-        if (measurement.accepted) continue;
-
         const std::string src =
                 path + "group_pts" + std::to_string(measurement.index) + ".jpg";
-        if (!utility::filesystem::FileExists(src)) continue;
+        if (measurement.accepted && measurement.width_accepted) {
+            remove_stale_rejected_debug_images(path, measurement.index);
+            continue;
+        }
 
-        const std::string reason =
-                sanitize_filename_token(measurement.reject_reason);
+        const bool width_only_rejected =
+                measurement.accepted && !measurement.width_accepted;
+        const std::string raw_reason =
+                width_only_rejected ? measurement.width_reject_reason
+                                    : measurement.reject_reason;
+        const std::string reason = sanitize_filename_token(raw_reason);
         const std::string dst = path + "group_pts" +
                                 std::to_string(measurement.index) +
-                                "__REJECTED_" + reason + ".jpg";
+                                (width_only_rejected ? "__WIDTH_REJECTED_"
+                                                     : "__REJECTED_") +
+                                reason + ".jpg";
+        remove_stale_rejected_debug_images(path, measurement.index, dst);
+        if (!utility::filesystem::FileExists(src)) continue;
         if (utility::filesystem::FileExists(dst)) {
             utility::filesystem::RemoveFile(dst);
         }
@@ -1367,20 +1615,28 @@ void draw_final_measurement_summary(
     std::map<std::string, int> reject_counts;
     for (const auto& measurement : measurements) {
         if (measurement.accepted) {
-            accepted_widths.push_back(measurement.width);
             accepted_heights.push_back(measurement.height_abs);
             accepted_signed_heights.push_back(measurement.signed_height);
+            if (measurement.width_accepted)
+                accepted_widths.push_back(measurement.width);
         } else {
             reject_counts[measurement.reject_reason.empty()
                                   ? "unknown"
                                   : measurement.reject_reason]++;
         }
+        if (measurement.accepted && !measurement.width_accepted) {
+            reject_counts["width:" +
+                          (measurement.width_reject_reason.empty()
+                                   ? "unknown"
+                                   : measurement.width_reject_reason)]++;
+        }
     }
 
-    const double final_width = trimmed_mean(accepted_widths);
+    const double final_width = mean_value(accepted_widths);
     const double final_height = trimmed_mean(accepted_heights);
     const double final_signed_height = trimmed_mean(accepted_signed_heights);
-    const int accepted_count = static_cast<int>(accepted_widths.size());
+    const int width_accepted_count = static_cast<int>(accepted_widths.size());
+    const int accepted_count = static_cast<int>(accepted_heights.size());
     const int total_count = static_cast<int>(measurements.size());
 
     cv::Mat image(900, 1200, CV_8UC3, cv::Scalar(255, 255, 255));
@@ -1388,18 +1644,23 @@ void draw_final_measurement_summary(
     cv::putText(image, "Final measurement summary", cv::Point(24, 36),
                 cv::FONT_HERSHEY_SIMPLEX, 0.9, text_color, 2, cv::LINE_AA);
     cv::putText(image,
-                "accepted: " + std::to_string(accepted_count) + " / " +
+                "height used: " + std::to_string(accepted_count) + "/" +
                         std::to_string(total_count),
-                cv::Point(24, 70), cv::FONT_HERSHEY_SIMPLEX, 0.58, text_color,
+                cv::Point(24, 70), cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color,
+                1, cv::LINE_AA);
+    cv::putText(image,
+                "width used: " + std::to_string(width_accepted_count) + "/" +
+                        std::to_string(total_count),
+                cv::Point(210, 70), cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color,
                 1, cv::LINE_AA);
     cv::putText(image, "step_width: " + format_double(final_width),
-                cv::Point(260, 70), cv::FONT_HERSHEY_SIMPLEX, 0.58, text_color,
+                cv::Point(390, 70), cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color,
                 1, cv::LINE_AA);
     cv::putText(image, "gap_step_abs: " + format_double(final_height),
-                cv::Point(500, 70), cv::FONT_HERSHEY_SIMPLEX, 0.58, text_color,
+                cv::Point(610, 70), cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color,
                 1, cv::LINE_AA);
     cv::putText(image, "signed_height: " + format_double(final_signed_height),
-                cv::Point(760, 70), cv::FONT_HERSHEY_SIMPLEX, 0.48, text_color,
+                cv::Point(880, 70), cv::FONT_HERSHEY_SIMPLEX, 0.45, text_color,
                 1, cv::LINE_AA);
     cv::putText(image,
                 "green=used  red=rejected  purple=signed height  black=width",
@@ -1417,7 +1678,7 @@ void draw_final_measurement_summary(
 
     auto draw_chart = [&](const cv::Rect& rect, const std::string& title,
                           const std::vector<double>& values,
-                          double final_value) {
+                          double final_value, bool width_chart) {
         cv::rectangle(image, rect, cv::Scalar(210, 210, 210), 1);
         cv::putText(image, title, cv::Point(rect.x + 10, rect.y + 24),
                     cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color, 1, cv::LINE_AA);
@@ -1425,9 +1686,12 @@ void draw_final_measurement_summary(
 
         double v_min = std::numeric_limits<double>::max();
         double v_max = -std::numeric_limits<double>::max();
+        auto value_accepted = [&](int index) {
+            return measurements[index].accepted &&
+                   (!width_chart || measurements[index].width_accepted);
+        };
         for (int i = 0; i < values.size(); ++i) {
-            if (!measurements[i].accepted || !std::isfinite(values[i]))
-                continue;
+            if (!value_accepted(i) || !std::isfinite(values[i])) continue;
             v_min = std::min(v_min, values[i]);
             v_max = std::max(v_max, values[i]);
         }
@@ -1483,8 +1747,7 @@ void draw_final_measurement_summary(
         }
 
         for (int i = 1; i < values.size(); ++i) {
-            if (!measurements[i].accepted || !measurements[i - 1].accepted)
-                continue;
+            if (!value_accepted(i) || !value_accepted(i - 1)) continue;
             if (!std::isfinite(values[i]) || !std::isfinite(values[i - 1]))
                 continue;
             cv::line(image, to_point(i - 1, values[i - 1]),
@@ -1493,11 +1756,11 @@ void draw_final_measurement_summary(
         }
         for (int i = 0; i < values.size(); ++i) {
             if (!std::isfinite(values[i])) continue;
-            const cv::Scalar color = measurements[i].accepted
+            const cv::Scalar color = value_accepted(i)
                                              ? cv::Scalar(0, 145, 0)
                                              : cv::Scalar(0, 0, 230);
             cv::circle(image, to_point(i, values[i]),
-                       measurements[i].accepted ? 2 : 3, color, -1,
+                       value_accepted(i) ? 2 : 3, color, -1,
                        cv::LINE_AA);
         }
     };
@@ -1510,14 +1773,14 @@ void draw_final_measurement_summary(
     }
 
     draw_chart(cv::Rect(24, 180, 552, 245), "width by slice", widths,
-               final_width);
+               final_width, true);
     draw_chart(cv::Rect(624, 180, 552, 245), "height_abs by slice", heights,
-               final_height);
+               final_height, false);
 
     const cv::Rect geom_rect(24, 465, 1152, 390);
     cv::rectangle(image, geom_rect, cv::Scalar(210, 210, 210), 1);
     cv::putText(image,
-                "Measured geometry from fitted surfaces at accepted boundaries",
+                "Reference boundaries used for fitted-surface height",
                 cv::Point(geom_rect.x + 10, geom_rect.y + 26),
                 cv::FONT_HERSHEY_SIMPLEX, 0.52, text_color, 1, cv::LINE_AA);
 
@@ -1724,8 +1987,7 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
         auto& m = measurements[i];
         if (!m.accepted) continue;
         if (m.left_surface_pts.empty() || m.right_surface_pts.empty()) {
-            m.accepted = false;
-            m.reject_reason = "insufficient_surface_points";
+            reject_measurement(m, "insufficient_surface_points");
             continue;
         }
         double y_phys = static_cast<double>(m.index) * trans_mat.y();
@@ -1773,13 +2035,15 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
     }
 
     // Collect statistics from accepted slices
-    std::vector<double> lr, rr, ws, hs;
+    std::vector<double> lr, rr, ws, hs, reference_spans;
     for (const auto& m : measurements) {
         if (!m.accepted) continue;
         lr.push_back(m.left_residual);
         rr.push_back(m.right_residual);
-        ws.push_back(m.width);
+        if (m.width_accepted) ws.push_back(m.width);
         hs.push_back(m.height_abs);
+        reference_spans.push_back(
+                std::abs(m.right_boundary.x() - m.left_boundary.x()));
     }
     if (lr.size() < 7) {
         write_3d_filter_debug_snapshot(debug_path, measurements);
@@ -1794,25 +2058,31 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
     double rr_limit = rr_m + 4.0 * 1.4826 * rr_mad;
     double w_m = median_value(ws), w_mad = median_absolute_deviation(ws, w_m);
     double h_m = median_value(hs), h_mad = median_absolute_deviation(hs, h_m);
-    const double global_w_limit = std::max(3.0 * 1.4826 * w_mad, w_m * 0.3);
+    const double reference_span_m = median_value(reference_spans);
+    const double global_w_limit =
+            std::max({3.0 * 1.4826 * w_mad, std::abs(w_m) * 0.3, 1.0});
     const double global_h_limit =
             std::max(3.0 * 1.4826 * h_mad, std::abs(h_m) * 0.3);
 
     std::vector<char> local_continuity_candidates(n, false);
+    std::vector<char> local_width_candidates(n, false);
     for (int i = 0; i < n; ++i) {
         const auto& m = measurements[i];
         local_continuity_candidates[i] = m.accepted &&
                                          m.left_residual <= lr_limit &&
                                          m.right_residual <= rr_limit;
+        local_width_candidates[i] =
+                local_continuity_candidates[i] && m.width_accepted;
     }
 
-    auto local_scalar_outlier = [&](int i, auto getter, double min_limit) {
+    auto local_scalar_outlier = [&](int i, auto getter, double min_limit,
+                                    const std::vector<char>& candidates) {
         constexpr int kLocalRadius = 4;
         std::vector<double> values;
         values.reserve(2 * kLocalRadius + 1);
         for (int j = std::max(0, i - kLocalRadius);
              j <= std::min(n - 1, i + kLocalRadius); ++j) {
-            if (!local_continuity_candidates[j]) continue;
+            if (!candidates[j]) continue;
             values.push_back(getter(measurements[j]));
         }
         if (values.size() < 5) return false;
@@ -1827,56 +2097,52 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
         auto& m = measurements[i];
         if (!m.accepted) continue;
         if (m.left_residual > lr_limit) {
-            m.accepted = false;
-            m.reject_reason = "left_surface_residual_outlier";
+            reject_measurement(m, "left_surface_residual_outlier");
             continue;
         }
         if (m.right_residual > rr_limit) {
-            m.accepted = false;
-            m.reject_reason = "right_surface_residual_outlier";
+            reject_measurement(m, "right_surface_residual_outlier");
             continue;
         }
         // Width continuity against a local robust window. This avoids
         // order-dependent rejection cascades from single-neighbor checks.
         const double local_w_limit = std::max(2.0, w_m * 0.4);
-        if (local_scalar_outlier(
+        if (m.width_accepted && m.width > 0.0 &&
+            local_scalar_outlier(
                     i, [](const SliceMeasurement& s) { return s.width; },
-                    std::min(global_w_limit, local_w_limit))) {
-            m.accepted = false;
-            m.reject_reason = "width_local_jump";
-            continue;
+                    std::min(global_w_limit, local_w_limit),
+                    local_width_candidates)) {
+            reject_measurement_width(m, "width_local_jump");
         }
         // Height continuity
         const double local_h_limit = std::max(2.0, std::abs(h_m) * 0.25);
         if (local_scalar_outlier(
                     i, [](const SliceMeasurement& s) { return s.height_abs; },
-                    std::min(global_h_limit, local_h_limit))) {
-            m.accepted = false;
-            m.reject_reason = "height_local_jump";
+                    std::min(global_h_limit, local_h_limit),
+                    local_continuity_candidates)) {
+            reject_measurement(m, "height_local_jump");
             continue;
         }
         // x-boundary continuity. Compare to the local trend instead of a
         // single adjacent slice so smooth diagonal seams are preserved.
-        const double boundary_limit = std::max(2.0, w_m * 0.5);
+        const double boundary_limit = std::max(2.0, reference_span_m * 0.5);
         if (local_scalar_outlier(
                     i,
                     [](const SliceMeasurement& s) {
                         return s.left_boundary.x();
                     },
-                    boundary_limit) ||
+                    boundary_limit, local_continuity_candidates) ||
             local_scalar_outlier(
                     i,
                     [](const SliceMeasurement& s) {
                         return s.right_boundary.x();
                     },
-                    boundary_limit)) {
-            m.accepted = false;
-            m.reject_reason = "boundary_local_jump";
+                    boundary_limit, local_continuity_candidates)) {
+            reject_measurement(m, "boundary_local_jump");
             continue;
         }
         if (m.right_surface_pts.size() < kMinSurfacePoints) {
-            m.accepted = false;
-            m.reject_reason = "short_right_support";
+            reject_measurement(m, "short_right_support");
             continue;
         }
     }
@@ -1889,14 +2155,18 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
         write_3d_filter_debug_snapshot(path, measurements);
         // Overview plots: rejected slices as red dots, accepted as green lines
         auto draw_overview = [&](const std::string& fname,
-                                 const std::vector<double>& vals) {
+                                 const std::vector<double>& vals,
+                                 bool width_chart) {
             if (vals.empty() || n < 2) return;
+            auto value_accepted = [&](int index) {
+                return measurements[index].accepted &&
+                       (!width_chart || measurements[index].width_accepted);
+            };
             // Find range from accepted slices only
             double vmin = std::numeric_limits<double>::max();
             double vmax = -std::numeric_limits<double>::max();
             for (int i = 0; i < n; ++i) {
-                if (!measurements[i].accepted || !std::isfinite(vals[i]))
-                    continue;
+                if (!value_accepted(i) || !std::isfinite(vals[i])) continue;
                 vmin = std::min(vmin, vals[i]);
                 vmax = std::max(vmax, vals[i]);
             }
@@ -1908,7 +2178,7 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
             cv::Mat img(400, 800, CV_8UC3, cv::Scalar(255, 255, 255));
             // Draw rejected slices as red dots
             for (int i = 0; i < n; ++i) {
-                if (measurements[i].accepted) continue;
+                if (value_accepted(i)) continue;
                 if (!std::isfinite(vals[i])) continue;
                 int x = i * 780 / std::max(n - 1, 1) + 10;
                 int y = static_cast<int>(380 - (vals[i] - vmin) / vspan * 360);
@@ -1916,8 +2186,7 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
             }
             // Draw accepted slices as green lines connecting adjacent accepted
             for (int i = 1; i < n; ++i) {
-                if (!measurements[i].accepted || !measurements[i - 1].accepted)
-                    continue;
+                if (!value_accepted(i) || !value_accepted(i - 1)) continue;
                 if (!std::isfinite(vals[i]) || !std::isfinite(vals[i - 1]))
                     continue;
                 int x1 = (i - 1) * 780 / (n - 1) + 10;
@@ -1935,8 +2204,8 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
             wv[i] = measurements[i].width;
             hv[i] = measurements[i].height;
         }
-        draw_overview("width_vs_slice.png", wv);
-        draw_overview("height_vs_slice.png", hv);
+        draw_overview("width_vs_slice.png", wv, true);
+        draw_overview("height_vs_slice.png", hv, false);
     }
     return measurements;
 }
@@ -2597,7 +2866,7 @@ void GapStepDetection::detect_gap_step_dll_plot(
                                &right_surface);
 
     auto measurements = collect_slice_measurements(
-            corners, LHT_width, LHT, &left_surface, &right_surface);
+            corners, LHT_width, true, &left_surface, &right_surface);
     measurements = filter_slices_by_3d_consistency(
             measurements, transformation_matrix, debug_mode ? debug_path : "");
     fill_result_from_measurements(measurements, gap_step, step_width,
@@ -2685,7 +2954,7 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
 
     // Collect measurements with surface points
     auto measurements = collect_slice_measurements(
-            corners, LHT_width, LHT, &left_surface, &right_surface);
+            corners, LHT_width, true, &left_surface, &right_surface);
     annotate_slice_quality(measurements, cloud);
 
     // 3D consistency filter
@@ -3872,10 +4141,6 @@ void GapStepDetection::compute_step_width_dll(
         // Eigen::Vector2d& max_derivative_point,
         std::vector<Eigen::Vector2d>& limit_pts,
         bool LHT) {
-    (void)cloud_pts;
-    (void)resampled_pts;
-    (void)left_height_threshold;
-    (void)right_height_threshold;
     (void)LHT;
 
     std::pair<Eigen::Vector2d, Eigen::Vector2d> left_line = line_segs[0];
@@ -3915,10 +4180,38 @@ void GapStepDetection::compute_step_width_dll(
     intersections.emplace_back(
             std::vector<Eigen::Vector2d>{left_boundary, right_boundary});
 
+    const auto& left_near_gap =
+            endpoint_nearest_x(left_line, left_boundary.x());
+    const auto& right_near_gap =
+            endpoint_nearest_x(right_line, right_boundary.x());
+    const bool left_is_lower =
+            left_near_gap.y() <= right_near_gap.y();
+    const double lower_height_threshold =
+            left_is_lower ? left_height_threshold : right_height_threshold;
+    const auto& profile = cloud_pts.size() >= 2 ? cloud_pts : resampled_pts;
+    const auto width_result = compute_threshold_width_from_profile(
+            profile, left_line, right_line, lower_height_threshold,
+            left_boundary.x(), right_boundary.x());
+    if (width_result.valid) {
+        intersections.emplace_back(std::vector<Eigen::Vector2d>{
+                width_result.left_intersection,
+                width_result.right_intersection});
+    } else {
+        intersections.emplace_back(std::vector<Eigen::Vector2d>{});
+    }
+    if (std::isfinite(width_result.shifted_line.first.x()) &&
+        std::isfinite(width_result.shifted_line.second.x())) {
+        intersections.emplace_back(std::vector<Eigen::Vector2d>{
+                width_result.shifted_line.first,
+                width_result.shifted_line.second});
+    } else {
+        intersections.emplace_back(std::vector<Eigen::Vector2d>{});
+    }
+
     limit_pts.clear();
     limit_pts.push_back(left_boundary);
     limit_pts.push_back(right_boundary);
-    temp_width.push_back(std::abs(right_boundary.x() - left_boundary.x()));
+    temp_width.push_back(width_result.valid ? width_result.width : 0.0);
 }
 
 void GapStepDetection::calculate_gap_step(lineSegments& corners,
@@ -3946,7 +4239,8 @@ void GapStepDetection::calculate_gap_step_dll_plot(
         double& step_width,
         std::vector<std::vector<double>>& temp_res,
         bool LHT) {
-    auto measurements = collect_slice_measurements(corners, LHT_width, LHT);
+    (void)LHT;
+    auto measurements = collect_slice_measurements(corners, LHT_width, true);
     fill_result_from_measurements(measurements, gap_step, step_width,
                                   &temp_res);
     const int accepted_count =
@@ -3999,6 +4293,95 @@ GapStepDetection::test_fast_path_detect_platforms(
     return fast_path_detect_platforms(raw_pts, &fallback_reason);
 }
 
+GapStepDetection::ThresholdWidthTestResult
+GapStepDetection::test_compute_threshold_width(
+        const std::vector<Eigen::Vector2d>& profile,
+        const std::pair<Eigen::Vector2d, Eigen::Vector2d>& left_line,
+        const std::pair<Eigen::Vector2d, Eigen::Vector2d>& right_line,
+        double height_threshold,
+        double gap_left_x,
+        double gap_right_x) {
+    const auto result = compute_threshold_width_from_profile(
+            profile, left_line, right_line, height_threshold, gap_left_x,
+            gap_right_x);
+    ThresholdWidthTestResult test_result;
+    test_result.width = result.width;
+    test_result.valid = result.valid;
+    test_result.lower_line_index = result.lower_line_index;
+    test_result.left_intersection = result.left_intersection;
+    test_result.right_intersection = result.right_intersection;
+    test_result.shifted_line = result.shifted_line;
+    test_result.reason = result.reason;
+    return test_result;
+}
+
+int GapStepDetection::test_width_height_independence() {
+    {
+        lineSegments corners{
+                {Eigen::Vector2d(0.0, 5.0), Eigen::Vector2d(10.0, 8.0)},
+                {Eigen::Vector2d(0.0, 5.0), Eigen::Vector2d(10.0, 8.0)}};
+        std::vector<double> widths{0.0, 10.0};
+        auto measurements = collect_slice_measurements(corners, widths, true);
+        double gap_step = 0.0;
+        double step_width = 0.0;
+        std::vector<std::vector<double>> temp_res(2);
+        fill_result_from_measurements(measurements, gap_step, step_width,
+                                      &temp_res);
+        if (temp_res[0].size() != 2 || temp_res[1].size() != 2 ||
+            std::abs(step_width - 5.0) > 1e-9 ||
+            std::abs(gap_step - 3.0) > 1e-9) {
+            std::cerr << "zero width must participate without dropping height"
+                      << std::endl;
+            return 1;
+        }
+    }
+
+    {
+        lineSegments corners;
+        std::vector<double> widths;
+        for (int i = 0; i < 10; ++i) {
+            corners.emplace_back(Eigen::Vector2d(0.0, 5.0),
+                                 Eigen::Vector2d(10.0, 8.0));
+            widths.push_back(i < 2 ? 0.0 : 10.0);
+        }
+        auto measurements = collect_slice_measurements(corners, widths, true);
+        double gap_step = 0.0;
+        double step_width = 0.0;
+        std::vector<std::vector<double>> temp_res(2);
+        fill_result_from_measurements(measurements, gap_step, step_width,
+                                      &temp_res);
+        if (temp_res[0].size() != 10 || std::abs(step_width - 8.0) > 1e-9) {
+            std::cerr << "zero widths must affect the final width aggregate"
+                      << std::endl;
+            return 1;
+        }
+    }
+
+    {
+        lineSegments corners;
+        std::vector<double> widths;
+        for (int i = 0; i < 9; ++i) {
+            corners.emplace_back(Eigen::Vector2d(0.0, 5.0),
+                                 Eigen::Vector2d(10.0, 8.0));
+            widths.push_back(i == 8 ? 100.0 : 10.0);
+        }
+        auto measurements = collect_slice_measurements(corners, widths, true);
+        double gap_step = 0.0;
+        double step_width = 0.0;
+        std::vector<std::vector<double>> temp_res(2);
+        fill_result_from_measurements(measurements, gap_step, step_width,
+                                      &temp_res);
+        if (temp_res[0].size() != 8 || temp_res[1].size() != 9 ||
+            std::abs(step_width - 10.0) > 1e-9 ||
+            std::abs(gap_step - 3.0) > 1e-9) {
+            std::cerr << "width outlier must not remove a valid height"
+                      << std::endl;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 std::pair<Eigen::Vector2d, Eigen::Vector2d>
 GapStepDetection::test_compute_step_boundaries(
         const std::vector<Eigen::Vector2d>& left_pts,
@@ -4032,13 +4415,18 @@ int GapStepDetection::test_mark_rejected_debug_images(
     cv::Mat image(16, 16, CV_8UC3, cv::Scalar(255, 255, 255));
     cv::imwrite(path + "group_pts0.jpg", image);
     cv::imwrite(path + "group_pts1.jpg", image);
+    cv::imwrite(path + "group_pts2.jpg", image);
 
-    std::vector<SliceMeasurement> measurements(2);
+    std::vector<SliceMeasurement> measurements(3);
     measurements[0].index = 0;
     measurements[0].accepted = true;
     measurements[1].index = 1;
     measurements[1].accepted = false;
     measurements[1].reject_reason = "width_outlier";
+    measurements[2].index = 2;
+    measurements[2].accepted = true;
+    measurements[2].width_accepted = false;
+    measurements[2].width_reject_reason = "width_local_jump";
 
     mark_rejected_debug_images(path, measurements);
 
@@ -4046,6 +4434,8 @@ int GapStepDetection::test_mark_rejected_debug_images(
     const std::string rejected_original_path = path + "group_pts1.jpg";
     const std::string rejected_marked_path =
             path + "group_pts1__REJECTED_width_outlier.jpg";
+    const std::string width_rejected_marked_path =
+            path + "group_pts2__WIDTH_REJECTED_width_local_jump.jpg";
 
     if (!utility::filesystem::FileExists(accepted_path)) {
         std::cerr << "accepted debug image should keep original name"
@@ -4059,6 +4449,11 @@ int GapStepDetection::test_mark_rejected_debug_images(
     }
     if (!utility::filesystem::FileExists(rejected_marked_path)) {
         std::cerr << "rejected debug image should be marked in filename"
+                  << std::endl;
+        return 1;
+    }
+    if (!utility::filesystem::FileExists(width_rejected_marked_path)) {
+        std::cerr << "width-only rejected debug image should be marked"
                   << std::endl;
         return 1;
     }
@@ -4181,18 +4576,21 @@ int GapStepDetection::test_3d_consistency_filter(const std::string& debug_dir) {
         for (int i = 0; i < n_slices; ++i) {
             double w = (i == 10) ? 20.0 : 5.0;  // sudden width jump at slice 10
             measurements.push_back(
-                    make_slice(i, 10.0, 5.0, 10.0 + w, 8.0, w, 3.0));
+                    make_slice(i, 10.0, 5.0, 15.0, 8.0, w, 3.0));
         }
         auto filtered = filter_slices_by_3d_consistency(
                 measurements, trans_mat,
                 debug_dir.empty() ? "" : debug_dir + "/test3_width_jump");
-        if (filtered[10].accepted) {
-            std::cerr << "TEST3 FAIL: slice with width jump should be rejected"
+        if (!filtered[10].accepted || filtered[10].width_accepted) {
+            std::cerr << "TEST3 FAIL: width jump should reject only width, "
+                         "not the valid height"
                       << std::endl;
             return 1;
         }
-        if (!filtered[0].accepted || !filtered[15].accepted) {
-            std::cerr << "TEST3 FAIL: normal slices should be accepted"
+        if (!filtered[0].accepted || !filtered[0].width_accepted ||
+            !filtered[15].accepted || !filtered[15].width_accepted) {
+            std::cerr << "TEST3 FAIL: normal slice width and height should be "
+                         "accepted"
                       << std::endl;
             return 1;
         }

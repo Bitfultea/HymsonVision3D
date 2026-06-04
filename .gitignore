@@ -19,3 +19,4 @@ build_with_system_libusb.sh
 .remember/*
 bspline_debug/*
 bspline_debug_ply/*
+.sisyphus/

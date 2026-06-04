@@ -551,8 +551,7 @@ static int run_self_test(const char* debug_dir) {
     std::vector<Eigen::Vector2d> short_valley_pts;
     short_valley_pts.reserve(150);
     for (int x = 0; x <= 53; ++x) {
-        short_valley_pts.emplace_back(static_cast<double>(x),
-                                      48.0 - 0.018 * x);
+        short_valley_pts.emplace_back(static_cast<double>(x), 48.0 - 0.018 * x);
     }
     for (int x = 54; x <= 63; ++x) {
         short_valley_pts.emplace_back(static_cast<double>(x),
@@ -587,19 +586,19 @@ static int run_self_test(const char* debug_dir) {
         return 1;
     }
     auto [short_valley_left_min_it, short_valley_left_max_it] =
-            std::minmax_element(short_valley_groups[0].begin(),
-                                short_valley_groups[0].end(),
-                                [](const Eigen::Vector2d& a,
-                                   const Eigen::Vector2d& b) {
-                                    return a.x() < b.x();
-                                });
+            std::minmax_element(
+                    short_valley_groups[0].begin(),
+                    short_valley_groups[0].end(),
+                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                        return a.x() < b.x();
+                    });
     auto [short_valley_right_min_it, short_valley_right_max_it] =
-            std::minmax_element(short_valley_groups[1].begin(),
-                                short_valley_groups[1].end(),
-                                [](const Eigen::Vector2d& a,
-                                   const Eigen::Vector2d& b) {
-                                    return a.x() < b.x();
-                                });
+            std::minmax_element(
+                    short_valley_groups[1].begin(),
+                    short_valley_groups[1].end(),
+                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                        return a.x() < b.x();
+                    });
     if (short_valley_left_max_it->x() > 58.0 ||
         short_valley_right_min_it->x() < 78.0) {
         std::cerr << "short valley floor must not be selected as a reference "
@@ -879,8 +878,7 @@ int main(int argc, char** argv) {
     // --- 算法参数 ---
     double step_height = 0;  // [输出] 检测到的台阶高度
     double step_width = 0;   // [输出] 检测到的台阶宽度
-    double height_threshold =
-            1;        // Deprecated: kept for legacy API compatibility.
+    double height_threshold = 1;  // Z offset used for threshold-width measure.
     bool LHT = true;  // true: 左高右低, false: 左低右高
     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(1, 1, 1);
     std::vector<std::vector<double>> temp_res;
