@@ -1794,8 +1794,33 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
     double rr_limit = rr_m + 4.0 * 1.4826 * rr_mad;
     double w_m = median_value(ws), w_mad = median_absolute_deviation(ws, w_m);
     double h_m = median_value(hs), h_mad = median_absolute_deviation(hs, h_m);
-    double w_limit = std::max(3.0 * 1.4826 * w_mad, w_m * 0.3);
-    double h_limit = std::max(3.0 * 1.4826 * h_mad, std::abs(h_m) * 0.3);
+    const double global_w_limit = std::max(3.0 * 1.4826 * w_mad, w_m * 0.3);
+    const double global_h_limit =
+            std::max(3.0 * 1.4826 * h_mad, std::abs(h_m) * 0.3);
+
+    std::vector<char> local_continuity_candidates(n, false);
+    for (int i = 0; i < n; ++i) {
+        const auto& m = measurements[i];
+        local_continuity_candidates[i] = m.accepted &&
+                                         m.left_residual <= lr_limit &&
+                                         m.right_residual <= rr_limit;
+    }
+
+    auto local_scalar_outlier = [&](int i, auto getter, double min_limit) {
+        constexpr int kLocalRadius = 4;
+        std::vector<double> values;
+        values.reserve(2 * kLocalRadius + 1);
+        for (int j = std::max(0, i - kLocalRadius);
+             j <= std::min(n - 1, i + kLocalRadius); ++j) {
+            if (!local_continuity_candidates[j]) continue;
+            values.push_back(getter(measurements[j]));
+        }
+        if (values.size() < 5) return false;
+        const double median = median_value(values);
+        const double mad = median_absolute_deviation(values, median);
+        const double limit = std::max(4.0 * 1.4826 * mad, min_limit);
+        return std::abs(getter(measurements[i]) - median) > limit;
+    };
 
     // Apply filter
     for (int i = 0; i < n; ++i) {
@@ -1811,53 +1836,40 @@ std::vector<SliceMeasurement> filter_slices_by_3d_consistency(
             m.reject_reason = "right_surface_residual_outlier";
             continue;
         }
-        // Width continuity with neighbors
-        bool w_jump = false;
-        for (int dj : {-1, 1}) {
-            int j = i + dj;
-            if (j < 0 || j >= n || !measurements[j].accepted) continue;
-            if (std::abs(m.width - measurements[j].width) > w_limit) {
-                w_jump = true;
-                break;
-            }
-        }
-        if (w_jump) {
+        // Width continuity against a local robust window. This avoids
+        // order-dependent rejection cascades from single-neighbor checks.
+        const double local_w_limit = std::max(2.0, w_m * 0.4);
+        if (local_scalar_outlier(
+                    i, [](const SliceMeasurement& s) { return s.width; },
+                    std::min(global_w_limit, local_w_limit))) {
             m.accepted = false;
             m.reject_reason = "width_local_jump";
             continue;
         }
         // Height continuity
-        bool h_jump = false;
-        for (int dj : {-1, 1}) {
-            int j = i + dj;
-            if (j < 0 || j >= n || !measurements[j].accepted) continue;
-            if (std::abs(m.height_abs - measurements[j].height_abs) > h_limit) {
-                h_jump = true;
-                break;
-            }
-        }
-        if (h_jump) {
+        const double local_h_limit = std::max(2.0, std::abs(h_m) * 0.25);
+        if (local_scalar_outlier(
+                    i, [](const SliceMeasurement& s) { return s.height_abs; },
+                    std::min(global_h_limit, local_h_limit))) {
             m.accepted = false;
             m.reject_reason = "height_local_jump";
             continue;
         }
-        // x-boundary continuity
-        bool b_jump = false;
-        for (int dj : {-1, 1}) {
-            int j = i + dj;
-            if (j < 0 || j >= n || !measurements[j].accepted) continue;
-            double gap = measurements[j].right_boundary.x() -
-                         measurements[j].left_boundary.x();
-            double limit = std::max(0.5, gap * 0.5);
-            if (std::abs(m.left_boundary.x() -
-                         measurements[j].left_boundary.x()) > limit ||
-                std::abs(m.right_boundary.x() -
-                         measurements[j].right_boundary.x()) > limit) {
-                b_jump = true;
-                break;
-            }
-        }
-        if (b_jump) {
+        // x-boundary continuity. Compare to the local trend instead of a
+        // single adjacent slice so smooth diagonal seams are preserved.
+        const double boundary_limit = std::max(2.0, w_m * 0.5);
+        if (local_scalar_outlier(
+                    i,
+                    [](const SliceMeasurement& s) {
+                        return s.left_boundary.x();
+                    },
+                    boundary_limit) ||
+            local_scalar_outlier(
+                    i,
+                    [](const SliceMeasurement& s) {
+                        return s.right_boundary.x();
+                    },
+                    boundary_limit)) {
             m.accepted = false;
             m.reject_reason = "boundary_local_jump";
             continue;
@@ -2247,6 +2259,7 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
         double x_center;
         double rms;
         double slope;
+        size_t point_count;
         double score;
     };
     std::vector<ScoredSegment> scored;
@@ -2271,11 +2284,143 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
         const double x_center = 0.5 * (x_min + x_max);
         double score = 2.0 * seg.span - 6.0 * rms - 2.0 * slope;
         scored.push_back(
-                {seg, line, x_min, x_max, x_center, rms, slope, score});
+                {seg, line, x_min, x_max, x_center, rms, slope,
+                 pts_seg.size(), score});
     }
     if (scored.size() < 2) {
         if (fallback_reason) *fallback_reason = "too_few_scored_segments";
         return {};
+    }
+
+    // Prefer a transition/gap-first interpretation when the slice contains
+    // two credible support surfaces separated by a high-change or depressed
+    // band. This rejects short valley-floor fragments before the legacy
+    // edge-proximity selector can choose them as a reference surface.
+    {
+        const double valid_x_span = pts.back().x() - pts.front().x();
+        const double reference_min_span =
+                std::max({12.0 * median_dx, min_reliable_span,
+                          std::min(valid_x_span * 0.08, 30.0 * median_dx)});
+        const size_t reference_min_points =
+                std::max<size_t>(8, 2 * kMinSurfacePoints);
+        const double reference_slope_limit =
+                std::clamp(std::max(0.6, median_slope * 6.0), 0.6, 2.5);
+        const double transition_slope_threshold =
+                std::max({0.5, slope_threshold * 1.5, median_slope * 5.0});
+        const double min_transition_height =
+                std::max(0.35, z_range * 0.03);
+
+        auto is_reference_like = [&](const ScoredSegment& candidate) {
+            return candidate.seg.span >= reference_min_span &&
+                   candidate.point_count >= reference_min_points &&
+                   candidate.slope <= reference_slope_limit &&
+                   candidate.rms <= max_acceptable_rms;
+        };
+
+        const ScoredSegment* transition_left = nullptr;
+        const ScoredSegment* transition_right = nullptr;
+        double best_transition_score = -std::numeric_limits<double>::max();
+
+        for (const auto& left : scored) {
+            if (!is_reference_like(left)) continue;
+            for (const auto& right : scored) {
+                if (&left == &right || !is_reference_like(right)) continue;
+                if (left.x_max + 2.0 * median_dx > right.x_min) continue;
+
+                const double gap_width = right.x_min - left.x_max;
+                bool has_intermediate_reference = false;
+                for (const auto& middle : scored) {
+                    if (&middle == &left || &middle == &right) continue;
+                    if (!is_reference_like(middle)) continue;
+                    if (middle.x_center > left.x_max &&
+                        middle.x_center < right.x_min) {
+                        has_intermediate_reference = true;
+                        break;
+                    }
+                }
+                if (has_intermediate_reference) continue;
+
+                double max_gap_slope = 0.0;
+                double valley_depth = 0.0;
+                int gap_point_count = 0;
+
+                const double left_y = line_y_at_x(left.line, left.x_max);
+                const double right_y = line_y_at_x(right.line, right.x_min);
+                const double transition_height = std::abs(right_y - left_y);
+
+                const size_t gap_begin = left.seg.end + 1;
+                const size_t gap_end =
+                        right.seg.start > 0 ? right.seg.start - 1 : 0;
+                if (gap_begin <= gap_end && gap_end < smoothed.size()) {
+                    for (size_t i = gap_begin; i <= gap_end; ++i) {
+                        ++gap_point_count;
+                        const double x = pts[i].x();
+                        const double t = gap_width > 1e-12
+                                                 ? (x - left.x_max) / gap_width
+                                                 : 0.0;
+                        const double bridge_y =
+                                left_y + std::clamp(t, 0.0, 1.0) *
+                                                 (right_y - left_y);
+                        valley_depth =
+                                std::max(valley_depth, bridge_y - pts[i].y());
+
+                        if (i > gap_begin) {
+                            const double dx =
+                                    smoothed[i].x() - smoothed[i - 1].x();
+                            if (std::abs(dx) > 1e-12) {
+                                max_gap_slope = std::max(
+                                        max_gap_slope,
+                                        std::abs((smoothed[i].y() -
+                                                  smoothed[i - 1].y()) /
+                                                 dx));
+                            }
+                        }
+                    }
+                }
+
+                const bool has_missing_band =
+                        gap_point_count == 0 && gap_width >= 3.0 * median_dx;
+                const bool has_step_transition =
+                        max_gap_slope >= transition_slope_threshold ||
+                        transition_height >= min_transition_height;
+                const bool has_valley_transition =
+                        valley_depth >= min_transition_height;
+                if (!has_missing_band && !has_step_transition &&
+                    !has_valley_transition) {
+                    continue;
+                }
+
+                const double support_span =
+                        std::min(left.seg.span, 80.0 * median_dx) +
+                        std::min(right.seg.span, 80.0 * median_dx);
+                const double transition_score =
+                        20.0 * max_gap_slope + 6.0 * valley_depth +
+                        3.0 * transition_height + 0.08 * support_span +
+                        0.01 * right.x_max - 0.05 * gap_width -
+                        4.0 * (left.rms + right.rms);
+                if (transition_score > best_transition_score) {
+                    best_transition_score = transition_score;
+                    transition_left = &left;
+                    transition_right = &right;
+                }
+            }
+        }
+
+        if (transition_left && transition_right) {
+            std::vector<Eigen::Vector2d> left_pts(
+                    pts.begin() + transition_left->seg.start,
+                    pts.begin() + transition_left->seg.end + 1);
+            std::vector<Eigen::Vector2d> right_pts(
+                    pts.begin() + transition_right->seg.start,
+                    pts.begin() + transition_right->seg.end + 1);
+
+            left_pts = robust_line_fit_inliers(left_pts);
+            right_pts = robust_line_fit_inliers(right_pts);
+            if (left_pts.size() >= kMinSurfacePoints &&
+                right_pts.size() >= kMinSurfacePoints) {
+                return {left_pts, right_pts};
+            }
+        }
     }
 
     // Measurement support should describe the local surfaces adjacent to the
@@ -4294,6 +4439,31 @@ int GapStepDetection::test_3d_consistency_filter(const std::string& debug_dir) {
             std::cerr << "TEST9 FAIL: measurement should keep both abs and "
                          "signed height"
                       << std::endl;
+            return 1;
+        }
+    }
+
+    // ----- Test 10: Smooth diagonal boundary motion should not be treated as
+    // local boundary jumps -----
+    {
+        std::vector<SliceMeasurement> measurements;
+        for (int i = 0; i < n_slices; ++i) {
+            const double left_x = 10.0 + 5.0 * i;
+            const double right_x = left_x + 8.0;
+            measurements.push_back(
+                    make_slice(i, left_x, 5.0, right_x, 8.0, 8.0, 3.0));
+        }
+        auto filtered = filter_slices_by_3d_consistency(
+                measurements, trans_mat,
+                debug_dir.empty() ? "" : debug_dir + "/test10_diagonal_edge");
+        int accepted_count = 0;
+        for (const auto& m : filtered)
+            if (m.accepted) accepted_count++;
+        if (accepted_count < n_slices - 1) {
+            std::cerr
+                    << "TEST10 FAIL: smooth diagonal boundaries should remain "
+                       "accepted, got "
+                    << accepted_count << "/" << n_slices << std::endl;
             return 1;
         }
     }

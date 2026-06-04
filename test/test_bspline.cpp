@@ -548,6 +548,69 @@ static int run_self_test(const char* debug_dir) {
         return 1;
     }
 
+    std::vector<Eigen::Vector2d> short_valley_pts;
+    short_valley_pts.reserve(150);
+    for (int x = 0; x <= 53; ++x) {
+        short_valley_pts.emplace_back(static_cast<double>(x),
+                                      48.0 - 0.018 * x);
+    }
+    for (int x = 54; x <= 63; ++x) {
+        short_valley_pts.emplace_back(static_cast<double>(x),
+                                      47.0 - 1.15 * (x - 53));
+    }
+    for (int x = 64; x <= 72; ++x) {
+        short_valley_pts.emplace_back(static_cast<double>(x),
+                                      35.5 - 0.025 * (x - 64));
+    }
+    for (int x = 73; x <= 81; ++x) {
+        short_valley_pts.emplace_back(static_cast<double>(x),
+                                      35.0 + 2.0 * (x - 73));
+    }
+    for (int x = 82; x <= 145; ++x) {
+        short_valley_pts.emplace_back(static_cast<double>(x),
+                                      53.5 + 0.011 * (x - 82));
+    }
+    auto short_valley_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    short_valley_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_short_valley_transition.png",
+                              short_valley_pts, short_valley_groups);
+    }
+    if (short_valley_groups.size() != 2 || short_valley_groups[0].empty() ||
+        short_valley_groups[1].empty()) {
+        std::cerr << "short-valley transition should still find two reference "
+                     "surfaces"
+                  << std::endl;
+        return 1;
+    }
+    auto [short_valley_left_min_it, short_valley_left_max_it] =
+            std::minmax_element(short_valley_groups[0].begin(),
+                                short_valley_groups[0].end(),
+                                [](const Eigen::Vector2d& a,
+                                   const Eigen::Vector2d& b) {
+                                    return a.x() < b.x();
+                                });
+    auto [short_valley_right_min_it, short_valley_right_max_it] =
+            std::minmax_element(short_valley_groups[1].begin(),
+                                short_valley_groups[1].end(),
+                                [](const Eigen::Vector2d& a,
+                                   const Eigen::Vector2d& b) {
+                                    return a.x() < b.x();
+                                });
+    if (short_valley_left_max_it->x() > 58.0 ||
+        short_valley_right_min_it->x() < 78.0) {
+        std::cerr << "short valley floor must not be selected as a reference "
+                     "surface, got left x=["
+                  << short_valley_left_min_it->x() << ", "
+                  << short_valley_left_max_it->x() << "] right x=["
+                  << short_valley_right_min_it->x() << ", "
+                  << short_valley_right_max_it->x() << "]" << std::endl;
+        return 1;
+    }
+
     std::vector<Eigen::Vector2d> missing_gap_pts;
     missing_gap_pts.reserve(460);
     for (int x = 0; x <= 420; ++x) {
