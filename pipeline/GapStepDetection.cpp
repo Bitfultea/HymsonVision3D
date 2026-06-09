@@ -40,6 +40,18 @@ bool profile_enabled() {
     return enabled;
 }
 
+bool raw_grid_fallback_enabled() {
+    static const bool enabled =
+            std::getenv("HYMSON3D_ENABLE_RAW_GRID_FALLBACK") != nullptr;
+    return enabled;
+}
+
+bool valley_floor_guard_enabled() {
+    static const bool enabled =
+            std::getenv("HYMSON3D_ENABLE_VALLEY_FLOOR_GUARD") != nullptr;
+    return enabled;
+}
+
 long long elapsed_us(ProfileClock::time_point start) {
     return std::chrono::duration_cast<std::chrono::microseconds>(
                    ProfileClock::now() - start)
@@ -2566,6 +2578,7 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
     // band. This rejects short valley-floor fragments before the legacy
     // edge-proximity selector can choose them as a reference surface.
     {
+        const bool enable_valley_floor_guard = valley_floor_guard_enabled();
         const double valid_x_span = pts.back().x() - pts.front().x();
         const double reference_min_span =
                 std::max({12.0 * median_dx, min_reliable_span,
@@ -2597,12 +2610,29 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
                 if (left.x_max + 2.0 * median_dx > right.x_min) continue;
 
                 const double gap_width = right.x_min - left.x_max;
+                const double left_y = line_y_at_x(left.line, left.x_max);
+                const double right_y = line_y_at_x(right.line, right.x_min);
+                const double transition_height = std::abs(right_y - left_y);
                 bool has_intermediate_reference = false;
                 for (const auto& middle : scored) {
                     if (&middle == &left || &middle == &right) continue;
                     if (!is_reference_like(middle)) continue;
                     if (middle.x_center > left.x_max &&
                         middle.x_center < right.x_min) {
+                        if (enable_valley_floor_guard) {
+                            const double t =
+                                    gap_width > 1e-12
+                                            ? (middle.x_center - left.x_max) /
+                                                      gap_width
+                                            : 0.0;
+                            const double bridge_y =
+                                    left_y + std::clamp(t, 0.0, 1.0) *
+                                                     (right_y - left_y);
+                            const double middle_y =
+                                    line_y_at_x(middle.line, middle.x_center);
+                            if (bridge_y - middle_y >= min_transition_height)
+                                continue;
+                        }
                         has_intermediate_reference = true;
                         break;
                     }
@@ -2612,10 +2642,6 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
                 double max_gap_slope = 0.0;
                 double valley_depth = 0.0;
                 int gap_point_count = 0;
-
-                const double left_y = line_y_at_x(left.line, left.x_max);
-                const double right_y = line_y_at_x(right.line, right.x_min);
-                const double transition_height = std::abs(right_y - left_y);
 
                 const size_t gap_begin = left.seg.end + 1;
                 const size_t gap_end =
@@ -3184,16 +3210,27 @@ void GapStepDetection::bspline_interpolation_dll2(
     std::atomic<long long> plot_us_sum{0};
     std::atomic<int> fast_hit_count{0};
     std::atomic<int> fast_miss_count{0};
+    std::atomic<int> raw_grid_hit_count{0};
+    std::atomic<int> raw_grid_miss_count{0};
+    std::atomic<int> short_slice_count{0};
+    std::atomic<int> line_fail_count{0};
+    std::atomic<int> measured_slice_count{0};
     std::vector<std::string> fast_miss_reasons(collect_profile ? n_slices : 0);
+    const bool enable_raw_grid_fallback = raw_grid_fallback_enabled();
 
-#pragma omp parallel for
-    for (int i = 0; i < cloud->y_slices_.size(); i++) {
+#pragma omp parallel for schedule(dynamic, 1)
+    for (int i = 0; i < static_cast<int>(n_slices); i++) {
         // Cubic B-spline needs at least degree+1 = 4 control points
-        if (cloud->y_slices_[i].size() < 4) continue;
+        if (cloud->y_slices_[i].size() < 4) {
+            if (collect_profile)
+                short_slice_count.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
 
         std::vector<Eigen::Vector2d> limit_pts;
         std::vector<std::vector<Eigen::Vector2d>> filter_groups;
         bool used_fast_path = false;
+        bool used_raw_grid_path = false;
         std::vector<Eigen::Vector2d>
                 resampled_pts;  // populated only for bspline path
 
@@ -3228,7 +3265,39 @@ void GapStepDetection::bspline_interpolation_dll2(
             }
         }
 
-        if (!used_fast_path) {
+        if (!used_fast_path && enable_raw_grid_fallback) {
+            ProfileClock::time_point raw_step_start;
+            if (collect_profile) raw_step_start = ProfileClock::now();
+            auto raw_groups = group_by_derivative_dll(cloud->y_slices_[i]);
+            if (collect_profile)
+                group_us_sum.fetch_add(elapsed_us(raw_step_start),
+                                       std::memory_order_relaxed);
+
+            if (collect_profile) raw_step_start = ProfileClock::now();
+            std::vector<Eigen::Vector2d> raw_limit_pts;
+            auto raw_filter_groups =
+                    statistics_filter(raw_groups, raw_limit_pts);
+            if (collect_profile)
+                filter_us_sum.fetch_add(elapsed_us(raw_step_start),
+                                        std::memory_order_relaxed);
+
+            if (raw_filter_groups.size() >= 2 &&
+                raw_filter_groups[0].size() >= kMinSurfacePoints &&
+                raw_filter_groups[1].size() >= kMinSurfacePoints) {
+                filter_groups = std::move(raw_filter_groups);
+                limit_pts = std::move(raw_limit_pts);
+                used_raw_grid_path = true;
+                if (collect_profile)
+                    raw_grid_hit_count.fetch_add(1,
+                                                 std::memory_order_relaxed);
+            } else {
+                if (collect_profile)
+                    raw_grid_miss_count.fetch_add(1,
+                                                  std::memory_order_relaxed);
+            }
+        }
+
+        if (!used_fast_path && !used_raw_grid_path) {
             // --- B-spline fallback path ---
             int sampled_pts = adaptive_sample_count(cloud->y_slices_[i].size());
             ProfileClock::time_point step_start;
@@ -3267,9 +3336,13 @@ void GapStepDetection::bspline_interpolation_dll2(
         if (lines.size() < 2) {
             step_height[i] = -255.0;
             LHT_width[i] = -255.0;
+            if (collect_profile)
+                line_fail_count.fetch_add(1, std::memory_order_relaxed);
             if (debug_mode) {
                 auto& plot_pts =
-                        used_fast_path ? cloud->y_slices_[i] : resampled_pts;
+                        (used_fast_path || used_raw_grid_path)
+                                ? cloud->y_slices_[i]
+                                : resampled_pts;
                 plot_clusters_dll(plot_pts, filter_groups, lines, {}, limit_pts,
                                   debug_path, i);
             }
@@ -3299,11 +3372,15 @@ void GapStepDetection::bspline_interpolation_dll2(
         if (collect_profile)
             measure_us_sum.fetch_add(elapsed_us(step_start),
                                      std::memory_order_relaxed);
+        if (collect_profile)
+            measured_slice_count.fetch_add(1, std::memory_order_relaxed);
 
         if (debug_mode) {
             if (collect_profile) step_start = ProfileClock::now();
             auto& plot_pts =
-                    used_fast_path ? cloud->y_slices_[i] : resampled_pts;
+                    (used_fast_path || used_raw_grid_path)
+                            ? cloud->y_slices_[i]
+                            : resampled_pts;
             if (LHT) {
                 plot_clusters_dll_lht(cloud->y_slices_[i], plot_pts,
                                       filter_groups, lines, height_threshold,
@@ -3320,8 +3397,17 @@ void GapStepDetection::bspline_interpolation_dll2(
 
     if (profile_enabled()) {
         std::cerr << "[profile] bspline_interpolation_dll2: "
-                  << "fast_hit=" << fast_hit_count.load()
-                  << " fast_miss=" << fast_miss_count.load() << std::endl;
+                  << "slices=" << n_slices
+                  << " short_slices=" << short_slice_count.load()
+                  << " line_fail=" << line_fail_count.load()
+                  << " measured=" << measured_slice_count.load()
+                  << " fast_hit=" << fast_hit_count.load()
+                  << " fast_miss=" << fast_miss_count.load()
+                  << " raw_grid_enabled="
+                  << (enable_raw_grid_fallback ? 1 : 0)
+                  << " raw_grid_hit=" << raw_grid_hit_count.load()
+                  << " raw_grid_miss=" << raw_grid_miss_count.load()
+                  << std::endl;
         std::cerr << "[profile] bspline_interpolation_dll2.thread_sum: "
                   << "resample=" << resample_us_sum.load() / 1000.0 << " ms, "
                   << "group=" << group_us_sum.load() / 1000.0 << " ms, "

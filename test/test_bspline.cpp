@@ -13,6 +13,7 @@
 //   ./bspline_test /data/scan.ply
 //   ./bspline_test /data/scan.tiff
 //   ./bspline_test /data/scan.tiff 0.005,0.1,0.001 /tmp/bspline_out/
+//   ./bspline_test /data/scan.tiff 1,1,100 /tmp/bspline_out/ --no-debug
 
 #include <algorithm>
 #include <chrono>
@@ -86,6 +87,13 @@ static bool has_ply_ext(const char* path) {
 
 static bool parse_ratio(const char* str, Eigen::Vector3d& ratio) {
     return sscanf(str, "%lf,%lf,%lf", &ratio.x(), &ratio.y(), &ratio.z()) == 3;
+}
+
+static bool has_arg(int argc, char** argv, const char* needle) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == needle) return true;
+    }
+    return false;
 }
 
 static void write_self_test_debug(
@@ -436,6 +444,50 @@ static int run_self_test(const char* debug_dir) {
         std::cerr << "real-like right support should be a flat platform, "
                      "slope="
                   << real_right_slope << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> z_scaled_transition_pts;
+    z_scaled_transition_pts.reserve(real_like_u_pts.size());
+    constexpr double kZScaleStress = 40.0;
+    for (const auto& pt : real_like_u_pts) {
+        z_scaled_transition_pts.emplace_back(pt.x(), pt.y() * kZScaleStress);
+    }
+    auto z_scaled_transition_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    z_scaled_transition_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_z_scaled_transition.png",
+                              z_scaled_transition_pts,
+                              z_scaled_transition_groups);
+    }
+    if (z_scaled_transition_groups.size() != 2 ||
+        z_scaled_transition_groups[0].empty() ||
+        z_scaled_transition_groups[1].empty()) {
+        std::cerr << "fast path should keep credible references when z scale "
+                     "is high"
+                  << std::endl;
+        return 1;
+    }
+    auto [z_scaled_right_min_it, z_scaled_right_max_it] =
+            std::minmax_element(
+                    z_scaled_transition_groups[1].begin(),
+                    z_scaled_transition_groups[1].end(),
+                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                        return a.x() < b.x();
+                    });
+    const double z_scaled_right_slope =
+            endpoint_slope(z_scaled_transition_groups[1]);
+    if (z_scaled_right_min_it->x() < 455.0 ||
+        z_scaled_right_max_it->x() < 468.0 ||
+        std::abs(z_scaled_right_slope) > 12.0) {
+        std::cerr << "z-scaled fast path should still use the top right "
+                     "support, got x=["
+                  << z_scaled_right_min_it->x() << ", "
+                  << z_scaled_right_max_it->x() << "] slope="
+                  << z_scaled_right_slope << std::endl;
         return 1;
     }
 
@@ -845,17 +897,24 @@ int main(int argc, char** argv) {
     const char* input_path = (argc > 1) ? argv[1] : DEFAULT_PLY;
     const char* debug_dir = nullptr;
     Eigen::Vector3d tiff_ratio(1, 1, 100);
+    bool debug_mode = !has_arg(argc, argv, "--no-debug");
 
     if (has_tiff_ext(input_path)) {
         // TIFF: args = <tiff> [ratio] [debug_dir]
         if (argc > 2 && parse_ratio(argv[2], tiff_ratio)) {
-            debug_dir = (argc > 3) ? argv[3] : DEFAULT_DEBUG;
+            debug_dir = (argc > 3 && std::string(argv[3]) != "--no-debug")
+                                ? argv[3]
+                                : DEFAULT_DEBUG;
         } else {
-            debug_dir = (argc > 2) ? argv[2] : DEFAULT_DEBUG;
+            debug_dir = (argc > 2 && std::string(argv[2]) != "--no-debug")
+                                ? argv[2]
+                                : DEFAULT_DEBUG;
         }
     } else {
         // PLY: args = <ply> [debug_dir]
-        debug_dir = (argc > 2) ? argv[2] : DEFAULT_DEBUG;
+        debug_dir = (argc > 2 && std::string(argv[2]) != "--no-debug")
+                            ? argv[2]
+                            : DEFAULT_DEBUG;
     }
 
     geometry::PointCloud::Ptr pointcloud =
@@ -884,7 +943,6 @@ int main(int argc, char** argv) {
     std::vector<std::vector<double>> temp_res;
     temp_res.resize(2);
     std::string debug_path(debug_dir);  // debug 输出目录
-    bool debug_mode = true;             // 开启则输出 debug 图像
 
     pipeline::GapStepDetection::detect_gap_step_dll_plot2(
             pointcloud, transformation_matrix, step_height, step_width,

@@ -554,6 +554,8 @@ if __name__ == "__main__":
         
         # convert_tiff_to_3channel(str(file), str(save_name))
         # convert_tiff_to_3channel_convex(str(file), str(save_name))
-        convert_tiff_to_3channel_convex_new(str(file), str(save_name))
+        # convert_tiff_to_3channel_convex_new(str(file), str(save_name))
         # convert_tiff_to_3channel_normal(str(file), str(save_name))
+
+        convert_tiff_to_3channel_defect_features(str(file),str(save_name))
         # id += 1
