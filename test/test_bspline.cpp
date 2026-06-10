@@ -662,6 +662,73 @@ static int run_self_test(const char* debug_dir) {
         return 1;
     }
 
+    std::vector<Eigen::Vector2d> long_valley_floor_pts;
+    long_valley_floor_pts.reserve(220);
+    for (int x = 0; x <= 70; ++x) {
+        long_valley_floor_pts.emplace_back(static_cast<double>(x),
+                                           50.0 - 0.01 * x);
+    }
+    for (int x = 71; x <= 90; ++x) {
+        const double t = static_cast<double>(x - 71) / 19.0;
+        long_valley_floor_pts.emplace_back(
+                static_cast<double>(x), 49.0 * (1.0 - t) + 12.0 * t);
+    }
+    for (int x = 91; x <= 125; ++x) {
+        long_valley_floor_pts.emplace_back(static_cast<double>(x),
+                                           12.0 + 0.005 * (x - 91));
+    }
+    for (int x = 126; x <= 132; ++x) {
+        const double t = static_cast<double>(x - 126) / 6.0;
+        long_valley_floor_pts.emplace_back(
+                static_cast<double>(x), 12.2 * (1.0 - t) + 53.0 * t);
+    }
+    for (int x = 133; x <= 205; ++x) {
+        long_valley_floor_pts.emplace_back(static_cast<double>(x),
+                                           53.0 - 0.006 * (x - 133));
+    }
+    auto long_valley_floor_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    long_valley_floor_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_long_valley_floor.png",
+                              long_valley_floor_pts,
+                              long_valley_floor_groups);
+    }
+    if (long_valley_floor_groups.size() != 2 ||
+        long_valley_floor_groups[0].empty() ||
+        long_valley_floor_groups[1].empty()) {
+        std::cerr << "long valley floor should still find two outer support "
+                     "surfaces"
+                  << std::endl;
+        return 1;
+    }
+    auto [long_valley_left_min_it, long_valley_left_max_it] =
+            std::minmax_element(
+                    long_valley_floor_groups[0].begin(),
+                    long_valley_floor_groups[0].end(),
+                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                        return a.x() < b.x();
+                    });
+    auto [long_valley_right_min_it, long_valley_right_max_it] =
+            std::minmax_element(
+                    long_valley_floor_groups[1].begin(),
+                    long_valley_floor_groups[1].end(),
+                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                        return a.x() < b.x();
+                    });
+    if (long_valley_left_max_it->x() > 76.0 ||
+        long_valley_right_min_it->x() < 132.0) {
+        std::cerr << "long valley floor must not block the outer platform "
+                     "pair, got left x=["
+                  << long_valley_left_min_it->x() << ", "
+                  << long_valley_left_max_it->x() << "] right x=["
+                  << long_valley_right_min_it->x() << ", "
+                  << long_valley_right_max_it->x() << "]" << std::endl;
+        return 1;
+    }
+
     std::vector<Eigen::Vector2d> missing_gap_pts;
     missing_gap_pts.reserve(460);
     for (int x = 0; x <= 420; ++x) {

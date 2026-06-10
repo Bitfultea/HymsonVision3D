@@ -46,12 +46,6 @@ bool raw_grid_fallback_enabled() {
     return enabled;
 }
 
-bool valley_floor_guard_enabled() {
-    static const bool enabled =
-            std::getenv("HYMSON3D_ENABLE_VALLEY_FLOOR_GUARD") != nullptr;
-    return enabled;
-}
-
 long long elapsed_us(ProfileClock::time_point start) {
     return std::chrono::duration_cast<std::chrono::microseconds>(
                    ProfileClock::now() - start)
@@ -2578,7 +2572,6 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
     // band. This rejects short valley-floor fragments before the legacy
     // edge-proximity selector can choose them as a reference surface.
     {
-        const bool enable_valley_floor_guard = valley_floor_guard_enabled();
         const double valid_x_span = pts.back().x() - pts.front().x();
         const double reference_min_span =
                 std::max({12.0 * median_dx, min_reliable_span,
@@ -2619,20 +2612,18 @@ std::vector<std::vector<Eigen::Vector2d>> fast_path_detect_platforms(
                     if (!is_reference_like(middle)) continue;
                     if (middle.x_center > left.x_max &&
                         middle.x_center < right.x_min) {
-                        if (enable_valley_floor_guard) {
-                            const double t =
-                                    gap_width > 1e-12
-                                            ? (middle.x_center - left.x_max) /
-                                                      gap_width
-                                            : 0.0;
-                            const double bridge_y =
-                                    left_y + std::clamp(t, 0.0, 1.0) *
-                                                     (right_y - left_y);
-                            const double middle_y =
-                                    line_y_at_x(middle.line, middle.x_center);
-                            if (bridge_y - middle_y >= min_transition_height)
-                                continue;
-                        }
+                        const double t =
+                                gap_width > 1e-12
+                                        ? (middle.x_center - left.x_max) /
+                                                  gap_width
+                                        : 0.0;
+                        const double bridge_y =
+                                left_y + std::clamp(t, 0.0, 1.0) *
+                                                 (right_y - left_y);
+                        const double middle_y =
+                                line_y_at_x(middle.line, middle.x_center);
+                        if (bridge_y - middle_y >= min_transition_height)
+                            continue;
                         has_intermediate_reference = true;
                         break;
                     }
