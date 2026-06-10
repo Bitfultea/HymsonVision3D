@@ -25,3 +25,5 @@ ml/yolo_3d/test_outputs/
 scripts/__pycache__/
 yolo11n.pt
 ml/yolo_3d/*.csv
+ml/yolo_3d/EXPERIMENT_COMPARISON.md
+ml/yolo_3d/PREPROCESS_ABLATION_20260608.md
