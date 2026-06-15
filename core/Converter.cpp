@@ -19,12 +19,14 @@ bool is_valid_tiff_height(double raw_height) {
 void set_tiff_metadata(geometry::PointCloud::Ptr pointcloud,
                        int cols,
                        int rows,
+                       const Eigen::Vector3d& ratio,
                        size_t invalid_count) {
     pointcloud->width_ = static_cast<size_t>(cols);
     pointcloud->height_ = static_cast<size_t>(rows);
     pointcloud->source_point_count_ =
             static_cast<size_t>(cols) * static_cast<size_t>(rows);
     pointcloud->invalid_point_count_ = invalid_count;
+    pointcloud->tiff_ratio_ = ratio;
 }
 }  // namespace
 
@@ -164,7 +166,7 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     }
 
     pointcloud->points_ = pcd;
-    set_tiff_metadata(pointcloud, tiff_image.cols, tiff_image.rows,
+    set_tiff_metadata(pointcloud, tiff_image.cols, tiff_image.rows, ratio,
                       invalid_count);
     LOG_DEBUG("Read from tiff file with pointcloud size: {}, invalid pixels: {}",
               pointcloud->points_.size(), pointcloud->invalid_point_count_);
@@ -253,7 +255,7 @@ void tiff_to_pointcloud(const std::string& tiff_path,
     }
     pointcloud->points_ = pcd;
     pointcloud->intensities_ = intensities;
-    set_tiff_metadata(pointcloud, tiff_image.cols, tiff_image.rows,
+    set_tiff_metadata(pointcloud, tiff_image.cols, tiff_image.rows, ratio,
                       invalid_count);
     LOG_DEBUG("Read from tiff file with pointcloud(intensity) size: {}, "
               "invalid pixels: {}",
@@ -281,7 +283,7 @@ void mat_to_pointcloud(const cv::Mat& mat,
         }
     }
     pointcloud->points_ = pcd;
-    set_tiff_metadata(pointcloud, mat.cols, mat.rows, invalid_count);
+    set_tiff_metadata(pointcloud, mat.cols, mat.rows, ratio, invalid_count);
     LOG_DEBUG("Read from tiff file with pointcloud size: {}, invalid pixels: {}",
               pointcloud->points_.size(), pointcloud->invalid_point_count_);
 }

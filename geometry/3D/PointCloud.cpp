@@ -12,6 +12,7 @@ PointCloud &PointCloud::Clear() {
     height_ = 0;
     source_point_count_ = 0;
     invalid_point_count_ = 0;
+    tiff_ratio_ = Eigen::Vector3d::Ones();
     return *this;
 }
 

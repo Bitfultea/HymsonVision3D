@@ -125,6 +125,7 @@ public:
     size_t height_ = 0;
     size_t source_point_count_ = 0;
     size_t invalid_point_count_ = 0;
+    Eigen::Vector3d tiff_ratio_ = Eigen::Vector3d::Ones();
 };
 }  // namespace geometry
 }  // namespace hymson3d

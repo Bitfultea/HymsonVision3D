@@ -491,6 +491,98 @@ static int run_self_test(const char* debug_dir) {
         return 1;
     }
 
+    std::vector<Eigen::Vector2d> low_z_sloped_gap_pts;
+    low_z_sloped_gap_pts.reserve(210);
+    for (int x = 0; x <= 110; ++x) {
+        low_z_sloped_gap_pts.emplace_back(static_cast<double>(x),
+                                          20.0 - 0.004 * x);
+    }
+    for (int x = 130; x <= 165; ++x) {
+        low_z_sloped_gap_pts.emplace_back(static_cast<double>(x),
+                                          19.0 - 0.18 * (x - 130));
+    }
+    for (int x = 166; x <= 235; ++x) {
+        low_z_sloped_gap_pts.emplace_back(static_cast<double>(x),
+                                          12.7 + 0.004 * (x - 166));
+    }
+    auto low_z_sloped_gap_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    low_z_sloped_gap_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_low_z_sloped_gap.png",
+                              low_z_sloped_gap_pts,
+                              low_z_sloped_gap_groups);
+    }
+    if (low_z_sloped_gap_groups.size() != 2 ||
+        low_z_sloped_gap_groups[1].empty()) {
+        std::cerr << "low-z sloped-gap case should still find the real right "
+                     "support"
+                  << std::endl;
+        return 1;
+    }
+    auto [low_z_right_min_it, low_z_right_max_it] =
+            std::minmax_element(
+                    low_z_sloped_gap_groups[1].begin(),
+                    low_z_sloped_gap_groups[1].end(),
+                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                        return a.x() < b.x();
+                    });
+    const double low_z_right_slope =
+            endpoint_slope(low_z_sloped_gap_groups[1]);
+    if (low_z_right_min_it->x() < 164.0 ||
+        std::abs(low_z_right_slope) > 0.05) {
+        std::cerr << "low-z sloped gap should reject the diagonal transition "
+                     "as a reference, got right x=["
+                  << low_z_right_min_it->x() << ", "
+                  << low_z_right_max_it->x() << "] slope="
+                  << low_z_right_slope << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> scaled_sloped_gap_pts;
+    scaled_sloped_gap_pts.reserve(low_z_sloped_gap_pts.size());
+    constexpr double kSlopedGapZScale = 40.0;
+    for (const auto& pt : low_z_sloped_gap_pts) {
+        scaled_sloped_gap_pts.emplace_back(pt.x(), pt.y() * kSlopedGapZScale);
+    }
+    auto scaled_sloped_gap_groups =
+            pipeline::GapStepDetection::test_fast_path_detect_platforms(
+                    scaled_sloped_gap_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_scaled_sloped_gap.png",
+                              scaled_sloped_gap_pts,
+                              scaled_sloped_gap_groups);
+    }
+    if (scaled_sloped_gap_groups.size() != 2 ||
+        scaled_sloped_gap_groups[1].empty()) {
+        std::cerr << "scaled sloped-gap case should still find the real right "
+                     "support"
+                  << std::endl;
+        return 1;
+    }
+    auto [scaled_gap_right_min_it, scaled_gap_right_max_it] =
+            std::minmax_element(
+                    scaled_sloped_gap_groups[1].begin(),
+                    scaled_sloped_gap_groups[1].end(),
+                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                        return a.x() < b.x();
+                    });
+    const double scaled_gap_right_slope =
+            endpoint_slope(scaled_sloped_gap_groups[1]);
+    if (scaled_gap_right_min_it->x() < 164.0 ||
+        std::abs(scaled_gap_right_slope) > 0.05 * kSlopedGapZScale) {
+        std::cerr << "scaled sloped gap should reject the diagonal transition "
+                     "as a reference, got right x=["
+                  << scaled_gap_right_min_it->x() << ", "
+                  << scaled_gap_right_max_it->x() << "] slope="
+                  << scaled_gap_right_slope << std::endl;
+        return 1;
+    }
+
     std::vector<Eigen::Vector2d> fast_path_short_tail_pts;
     fast_path_short_tail_pts.reserve(480);
     for (int x = 0; x <= 420; ++x) {
@@ -934,6 +1026,77 @@ static int run_self_test(const char* debug_dir) {
                       << "source=" << invalid_cloud->source_point_count_
                       << " invalid=" << invalid_cloud->invalid_point_count_
                       << std::endl;
+            return 1;
+        }
+    }
+
+    {
+        std::string ratio_tiff_dir =
+                debug_dir ? std::string(debug_dir)
+                          : utility::filesystem::GetTempDirectoryPath();
+        if (!ratio_tiff_dir.empty() && ratio_tiff_dir.back() != '/')
+            ratio_tiff_dir += "/";
+        ratio_tiff_dir += "self_test_z_ratio_invariance/";
+        utility::filesystem::MakeDirectoryHierarchy(ratio_tiff_dir);
+
+        cv::Mat valley_tiff(24, 180, CV_32FC1);
+        for (int y = 0; y < valley_tiff.rows; ++y) {
+            float* row = valley_tiff.ptr<float>(y);
+            for (int x = 0; x < valley_tiff.cols; ++x) {
+                double z = 10.0;
+                if (x >= 70 && x <= 78) {
+                    const double t = static_cast<double>(x - 70) / 8.0;
+                    z = 10.0 * (1.0 - t) + 7.0 * t;
+                } else if (x >= 79 && x <= 87) {
+                    const double t = static_cast<double>(x - 79) / 8.0;
+                    z = 7.0 * (1.0 - t) + 10.0 * t;
+                }
+                row[x] = static_cast<float>(z);
+            }
+        }
+        const std::string valley_tiff_path =
+                ratio_tiff_dir + "equal_surface_valley.tiff";
+        if (!cv::imwrite(valley_tiff_path, valley_tiff)) {
+            std::cerr << "failed to write z-ratio invariance TIFF self-test"
+                      << std::endl;
+            return 1;
+        }
+
+        auto run_ratio_case = [&](double z_ratio, double& height,
+                                  double& width) {
+            auto cloud = std::make_shared<geometry::PointCloud>();
+            core::converter::tiff_to_pointcloud(
+                    valley_tiff_path, cloud, Eigen::Vector3d(1, 1, z_ratio),
+                    false);
+            Eigen::Vector3d transformation_matrix(1, 1, 1);
+            double height_threshold = 1.0;
+            std::vector<std::vector<double>> temp_res(2);
+            std::string case_debug_path = ratio_tiff_dir;
+            const bool ok = pipeline::GapStepDetection::detect_gap_step_dll_plot2(
+                    cloud, transformation_matrix, height, width,
+                    height_threshold, temp_res, case_debug_path, true, false);
+            if (!ok) {
+                std::cerr << "z-ratio invariance detect failed for z_ratio="
+                          << z_ratio << std::endl;
+                return false;
+            }
+            height /= z_ratio;
+            return true;
+        };
+
+        double h1 = 0.0;
+        double w1 = 0.0;
+        double h40 = 0.0;
+        double w40 = 0.0;
+        if (!run_ratio_case(1.0, h1, w1) ||
+            !run_ratio_case(40.0, h40, w40)) {
+            return 1;
+        }
+        if (w1 <= 0.0 || w40 <= 0.0 || std::abs(w1 - w40) > 0.75 ||
+            std::abs(h1 - h40) > 0.01) {
+            std::cerr << "z-ratio invariance failed: z=1 width=" << w1
+                      << " height=" << h1 << ", z=40 width=" << w40
+                      << " height=" << h40 << std::endl;
             return 1;
         }
     }

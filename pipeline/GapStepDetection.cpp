@@ -28,6 +28,7 @@ namespace {
 constexpr double kMinSurfaceSlopeLimit = 0.35;
 constexpr double kMaxSurfaceSlopeLimit = 20.0;
 constexpr double kMaxPlatformSlopeLimit = 35.0;
+constexpr double kCanonicalTiffZScale = 60.0;
 constexpr double kMinStableSurfaceSpan = 6.0;
 constexpr int kMaxSurfaceGap = 2;
 constexpr size_t kMinSurfacePoints = 4;
@@ -817,6 +818,94 @@ double median_absolute_deviation(const std::vector<double>& values,
     deviations.reserve(values.size());
     for (double value : values) deviations.push_back(std::abs(value - median));
     return median_value(deviations);
+}
+
+std::vector<double> absolute_local_slopes(
+        const std::vector<Eigen::Vector2d>& sorted_pts) {
+    std::vector<double> slopes;
+    slopes.reserve(sorted_pts.size());
+    for (size_t i = 1; i < sorted_pts.size(); ++i) {
+        const double dx = sorted_pts[i].x() - sorted_pts[i - 1].x();
+        if (std::abs(dx) < 1e-12) continue;
+        slopes.push_back(std::abs((sorted_pts[i].y() - sorted_pts[i - 1].y()) /
+                                  dx));
+    }
+    return slopes;
+}
+
+double adaptive_slope_limit_from_distribution(
+        const std::vector<double>& abs_slopes,
+        double median_multiplier,
+        double floor,
+        double cap = kMaxPlatformSlopeLimit) {
+    if (abs_slopes.empty()) return floor;
+    const double median_slope = median_value(abs_slopes);
+    return std::clamp(std::max(floor, median_slope * median_multiplier), floor,
+                      cap);
+}
+
+bool local_slopes_are_reference_like(
+        const std::vector<Eigen::Vector2d>& sorted_pts,
+        double slope_limit) {
+    const auto slopes = absolute_local_slopes(sorted_pts);
+    if (slopes.empty()) return true;
+    int excessive_count = 0;
+    for (double slope : slopes) {
+        if (slope > slope_limit) ++excessive_count;
+    }
+    const int max_excessive =
+            std::max(1, static_cast<int>(slopes.size() / 10));
+    return excessive_count <= max_excessive;
+}
+
+double tiff_z_scale_or_one(const geometry::PointCloud::Ptr& cloud) {
+    if (!cloud || cloud->source_point_count_ == 0) return 1.0;
+    const double z_scale = cloud->tiff_ratio_.z();
+    if (!std::isfinite(z_scale) || std::abs(z_scale) < 1e-12) return 1.0;
+    return z_scale;
+}
+
+void clear_slice_cache(const geometry::PointCloud::Ptr& cloud) {
+    if (!cloud) return;
+    cloud->y_slices_.clear();
+    cloud->y_slice_peaks.clear();
+    cloud->ny_slices_.clear();
+    cloud->y_slice_idxs.clear();
+    cloud->x_slices_.clear();
+    cloud->nx_slices_.clear();
+    cloud->x_slice_idxs.clear();
+}
+
+geometry::PointCloud::Ptr make_canonical_tiff_z_cloud(
+        const geometry::PointCloud::Ptr& cloud,
+        double input_z_scale) {
+    if (!cloud || cloud->source_point_count_ == 0 ||
+        std::abs(input_z_scale - kCanonicalTiffZScale) < 1e-12) {
+        return cloud;
+    }
+    auto normalized = std::make_shared<geometry::PointCloud>(*cloud);
+    const double z_factor = kCanonicalTiffZScale / input_z_scale;
+    for (auto& pt : normalized->points_) pt.z() *= z_factor;
+    normalized->tiff_ratio_.z() = kCanonicalTiffZScale;
+    clear_slice_cache(normalized);
+    return normalized;
+}
+
+void scale_measurement_z(std::vector<SliceMeasurement>& measurements,
+                         double z_scale) {
+    if (std::abs(z_scale - 1.0) < 1e-12) return;
+    const double abs_scale = std::abs(z_scale);
+    for (auto& measurement : measurements) {
+        measurement.left_boundary.y() *= z_scale;
+        measurement.right_boundary.y() *= z_scale;
+        measurement.signed_height *= z_scale;
+        measurement.height_abs *= abs_scale;
+        measurement.height = measurement.height_abs;
+        measurement.left_residual *= abs_scale;
+        measurement.right_residual *= abs_scale;
+        for (auto& pt : measurement.left_surface_pts) pt.y() *= z_scale;
+        for (auto& pt : measurement.right_surface_pts) pt.y() *= z_scale;
+    }
 }
 
 std::vector<SliceMeasurement> collect_slice_measurements(
@@ -2269,13 +2358,16 @@ std::vector<std::vector<Eigen::Vector2d>> detect_missing_gap_platforms(
         return {};
     }
 
-    auto candidate_quality_ok = [max_acceptable_rms](
-                                        const SurfaceCandidate& candidate) {
+    auto candidate_quality_ok =
+            [max_acceptable_rms](const SurfaceCandidate& candidate,
+                                 double slope_limit) {
         const double slope = std::abs(line_slope(candidate.line));
         const double roughness = candidate.rms / std::max(candidate.span, 1e-9);
         return candidate.points.size() >= kMinSurfacePoints &&
                candidate.span >= kMinStableSurfaceSpan &&
-               slope <= kMaxPlatformSlopeLimit &&
+               slope <= slope_limit &&
+               local_slopes_are_reference_like(candidate.points,
+                                               slope_limit) &&
                candidate.rms <= max_acceptable_rms && roughness <= 35.0;
     };
 
@@ -2285,31 +2377,49 @@ std::vector<std::vector<Eigen::Vector2d>> detect_missing_gap_platforms(
         const double min_span =
                 std::max(kMinStableSurfaceSpan, 6.0 * median_dx);
         const double max_span = std::max(30.0, min_span);
-        size_t start = 0;
-        size_t end = region.size() - 1;
+        const double slope_limit = adaptive_slope_limit_from_distribution(
+                absolute_local_slopes(region), 8.0, 0.05);
+
+        auto build_window =
+                [&](size_t start,
+                    size_t end) -> std::vector<Eigen::Vector2d> {
+            if (end < start || end >= region.size()) return {};
+            std::vector<Eigen::Vector2d> local(region.begin() + start,
+                                               region.begin() + end + 1);
+            if (local.size() < kMinSurfacePoints ||
+                local.back().x() - local.front().x() < min_span) {
+                return {};
+            }
+            SurfaceCandidate candidate = make_surface_candidate(local);
+            if (!candidate_quality_ok(candidate, slope_limit)) return {};
+            return robust_line_fit_inliers(local);
+        };
+
         if (use_right_edge) {
-            start = end;
-            while (start > 0 &&
-                   region[end].x() - region[start - 1].x() <= max_span) {
-                --start;
+            for (size_t end = region.size(); end > 0; --end) {
+                const size_t end_idx = end - 1;
+                size_t start = end_idx;
+                while (start > 0 &&
+                       region[end_idx].x() - region[start - 1].x() <=
+                               max_span) {
+                    --start;
+                }
+                auto local = build_window(start, end_idx);
+                if (!local.empty()) return local;
             }
         } else {
-            end = start;
-            while (end + 1 < region.size() &&
-                   region[end + 1].x() - region[start].x() <= max_span) {
-                ++end;
+            for (size_t start = 0; start < region.size(); ++start) {
+                size_t end = start;
+                while (end + 1 < region.size() &&
+                       region[end + 1].x() - region[start].x() <= max_span) {
+                    ++end;
+                }
+                auto local = build_window(start, end);
+                if (!local.empty()) return local;
             }
         }
 
-        std::vector<Eigen::Vector2d> local(region.begin() + start,
-                                           region.begin() + end + 1);
-        if (local.size() < kMinSurfacePoints ||
-            local.back().x() - local.front().x() < min_span) {
-            return {};
-        }
-        SurfaceCandidate candidate = make_surface_candidate(local);
-        if (!candidate_quality_ok(candidate)) return {};
-        return robust_line_fit_inliers(local);
+        return {};
     };
 
     std::vector<Eigen::Vector2d> left_pts = adjacent_surface(left_region, true);
@@ -2958,21 +3068,29 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
         ensure_trailing_path_separator(debug_path);
     }
 
+    const bool use_tiff_z_scale = cloud->source_point_count_ > 0;
+    const double z_scale = tiff_z_scale_or_one(cloud);
+    geometry::PointCloud::Ptr working_cloud =
+            make_canonical_tiff_z_cloud(cloud, z_scale);
+    const double output_z_scale =
+            use_tiff_z_scale ? z_scale / kCanonicalTiffZScale : 1.0;
+
     // slice along y axis
-    slice_along_y(cloud, transformation_matrix);
+    slice_along_y(working_cloud, transformation_matrix);
 
     // bspline interpolation with surface point extraction
     std::vector<double> LHT_width;
     lineSegments corners;
     std::vector<std::vector<Eigen::Vector2d>> left_surface, right_surface;
-    bspline_interpolation_dll2(cloud, height_threshold, corners, LHT_width,
+    bspline_interpolation_dll2(working_cloud, height_threshold, corners,
+                               LHT_width,
                                debug_path, LHT, debug_mode, &left_surface,
                                &right_surface);
 
     // Collect measurements with surface points
     auto measurements = collect_slice_measurements(
             corners, LHT_width, true, &left_surface, &right_surface);
-    annotate_slice_quality(measurements, cloud);
+    annotate_slice_quality(measurements, working_cloud);
 
     // 3D consistency filter
     {
@@ -2980,6 +3098,8 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
         measurements = filter_slices_by_3d_consistency(
                 measurements, transformation_matrix, filter_debug_path);
     }
+
+    scale_measurement_z(measurements, output_z_scale);
 
     // Fill results from filtered measurements
     fill_result_from_measurements(measurements, gap_step, step_width,
@@ -2994,6 +3114,7 @@ void GapStepDetection::detect_gap_step_dll_plot2_impl(
 void GapStepDetection::slice_along_y(geometry::PointCloud::Ptr cloud,
                                      Eigen::Vector3d transformation_matrix) {
     ProfileScope profile("slice_along_y");
+    clear_slice_cache(cloud);
     bool has_normals = cloud->HasNormals();
     // std::cout << transformation_matrix << std::endl;
     // std::cout << "has points: " << cloud->points_.size() << std::endl;
