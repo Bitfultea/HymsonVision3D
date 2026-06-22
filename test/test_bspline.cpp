@@ -935,6 +935,62 @@ static int run_self_test(const char* debug_dir) {
         return 1;
     }
 
+    std::vector<Eigen::Vector2d> ply_like_valley_pts;
+    ply_like_valley_pts.reserve(148);
+    for (int x = 0; x <= 70; ++x) {
+        ply_like_valley_pts.emplace_back(static_cast<double>(x),
+                                         0.9 - 0.0005 * x);
+    }
+    for (int x = 71; x <= 83; ++x) {
+        const double t = static_cast<double>(x - 71) / 12.0;
+        ply_like_valley_pts.emplace_back(static_cast<double>(x),
+                                         0.85 * (1.0 - t) + -1.0 * t);
+    }
+    for (int x = 84; x <= 119; ++x) {
+        ply_like_valley_pts.emplace_back(static_cast<double>(x),
+                                         -1.02 + 0.001 * (x - 84));
+    }
+    for (int x = 120; x <= 132; ++x) {
+        const double t = static_cast<double>(x - 120) / 12.0;
+        ply_like_valley_pts.emplace_back(static_cast<double>(x),
+                                         -0.95 * (1.0 - t) + 0.04 * t);
+    }
+    for (int x = 133; x <= 147; ++x) {
+        ply_like_valley_pts.emplace_back(static_cast<double>(x),
+                                         0.05 + 0.0005 * (x - 133));
+    }
+    auto ply_like_groups =
+            pipeline::GapStepDetection::test_filtered_groups_dll(
+                    ply_like_valley_pts);
+    if (debug_dir) {
+        std::string base(debug_dir);
+        if (!base.empty() && base.back() != '/') base += "/";
+        write_self_test_debug(base + "self_test_ply_like_valley.png",
+                              ply_like_valley_pts, ply_like_groups);
+    }
+    if (ply_like_groups.size() != 2 || ply_like_groups[0].empty() ||
+        ply_like_groups[1].empty()) {
+        std::cerr << "PLY-like valley should still find two reference surfaces"
+                  << std::endl;
+        return 1;
+    }
+    auto [ply_right_min_it, ply_right_max_it] = std::minmax_element(
+            ply_like_groups[1].begin(), ply_like_groups[1].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    const double ply_right_slope = endpoint_slope(ply_like_groups[1]);
+    const double ply_right_mean_y = mean_y(ply_like_groups[1]);
+    if (ply_right_min_it->x() < 128.0 ||
+        std::abs(ply_right_slope) > 0.05 || ply_right_mean_y < -0.2) {
+        std::cerr << "PLY-like valley right support should use the right "
+                     "platform, got x=["
+                  << ply_right_min_it->x() << ", " << ply_right_max_it->x()
+                  << "] slope=" << ply_right_slope
+                  << " mean_y=" << ply_right_mean_y << std::endl;
+        return 1;
+    }
+
     std::vector<Eigen::Vector2d> isolated_missing_pts;
     isolated_missing_pts.reserve(100);
     for (int x = 0; x <= 100; ++x) {

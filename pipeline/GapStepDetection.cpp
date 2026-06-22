@@ -47,6 +47,56 @@ bool raw_grid_fallback_enabled() {
     return enabled;
 }
 
+thread_local bool g_enable_small_scale_reference_fix = false;
+
+class ScopedSmallScaleReferenceFix {
+public:
+    explicit ScopedSmallScaleReferenceFix(bool enabled)
+        : previous_(g_enable_small_scale_reference_fix) {
+        g_enable_small_scale_reference_fix = enabled;
+    }
+    ~ScopedSmallScaleReferenceFix() {
+        g_enable_small_scale_reference_fix = previous_;
+    }
+
+private:
+    bool previous_;
+};
+
+double surface_rms_limit_from_range(double z_range) {
+    return std::max(0.03, std::abs(z_range) * 0.025);
+}
+
+double profile_z_range(const std::vector<Eigen::Vector2d>& pts) {
+    if (pts.empty()) return 0.0;
+    auto [y_min_it, y_max_it] = std::minmax_element(
+            pts.begin(), pts.end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.y() < b.y();
+            });
+    return std::abs(y_max_it->y() - y_min_it->y());
+}
+
+bool use_small_scale_profile_thresholds(
+        const std::vector<Eigen::Vector2d>& pts) {
+    return g_enable_small_scale_reference_fix && profile_z_range(pts) <= 5.0;
+}
+
+double profile_slope_floor(const std::vector<Eigen::Vector2d>& pts) {
+    if (!g_enable_small_scale_reference_fix) return kMinSurfaceSlopeLimit;
+    if (pts.size() < 2) return kMinSurfaceSlopeLimit;
+    const double y_span = profile_z_range(pts);
+    if (y_span > 5.0) return kMinSurfaceSlopeLimit;
+    auto [x_min_it, x_max_it] = std::minmax_element(
+            pts.begin(), pts.end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    const double x_span = std::max(x_max_it->x() - x_min_it->x(), 1e-9);
+    return std::clamp(3.0 * y_span / x_span, 0.03,
+                      kMinSurfaceSlopeLimit);
+}
+
 long long elapsed_us(ProfileClock::time_point start) {
     return std::chrono::duration_cast<std::chrono::microseconds>(
                    ProfileClock::now() - start)
@@ -445,11 +495,12 @@ double estimate_surface_slope_limit(const std::vector<Eigen::Vector2d>& pts) {
         if (std::abs(dx) < 1e-12) continue;
         slopes.push_back(std::abs((pts[i + 1].y() - pts[i].y()) / dx));
     }
-    if (slopes.empty()) return kMinSurfaceSlopeLimit;
+    const double slope_floor = profile_slope_floor(pts);
+    if (slopes.empty()) return slope_floor;
     std::nth_element(slopes.begin(), slopes.begin() + slopes.size() / 2,
                      slopes.end());
     const double median_slope = slopes[slopes.size() / 2];
-    return std::clamp(median_slope * 5.0, kMinSurfaceSlopeLimit,
+    return std::clamp(std::max(slope_floor, median_slope * 5.0), slope_floor,
                       kMaxSurfaceSlopeLimit);
 }
 
@@ -1354,6 +1405,9 @@ std::vector<SurfaceCandidate> collect_platform_candidates(
     const double x_span_total =
             std::max(pts.back().x() - pts.front().x(), 1e-9);
     const double y_span_total = std::max(y_max_it->y() - y_min_it->y(), 1e-9);
+    const double max_acceptable_rms =
+            surface_rms_limit_from_range(y_span_total);
+    const bool use_strict_rms_filter = use_small_scale_profile_thresholds(pts);
 
     struct PlatformWindowCandidate {
         size_t start = 0;
@@ -1380,6 +1434,7 @@ std::vector<SurfaceCandidate> collect_platform_candidates(
 
             auto [slope, intercept, rms] = window_stats(start, end);
             if (std::isnan(slope)) continue;
+            if (use_strict_rms_filter && rms > max_acceptable_rms) continue;
             if (std::abs(slope) > kMaxPlatformSlopeLimit) continue;
             double roughness = rms / std::max(span, 1e-9);
             if (roughness > 35.0) continue;
@@ -1444,8 +1499,59 @@ std::vector<SurfaceCandidate> collect_platform_candidates(
     return candidates;
 }
 
+std::vector<Eigen::Vector2d> select_right_edge_stable_surface(
+        const std::vector<Eigen::Vector2d>& points) {
+    if (points.size() < kMinSurfacePoints) return {};
+    if (!use_small_scale_profile_thresholds(points)) return {};
+
+    std::vector<Eigen::Vector2d> pts = points;
+    std::sort(pts.begin(), pts.end(),
+              [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                  if (a.x() == b.x()) return a.y() < b.y();
+                  return a.x() < b.x();
+              });
+
+    const double median_dx = median_positive_x_step(pts);
+    if (median_dx <= 1e-12) return {};
+    const double min_span = std::max(kMinStableSurfaceSpan, 4.0 * median_dx);
+    const double max_span = std::max(30.0, min_span);
+
+    auto [y_min_it, y_max_it] = std::minmax_element(
+            pts.begin(), pts.end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.y() < b.y();
+            });
+    const double rms_limit =
+            surface_rms_limit_from_range(y_max_it->y() - y_min_it->y());
+    const double local_slope_limit =
+            std::max(profile_slope_floor(pts) * 1.5, 0.03);
+
+    const size_t end = pts.size() - 1;
+    for (size_t start = end; start > 0; --start) {
+        const double span = pts[end].x() - pts[start].x();
+        if (span > max_span) break;
+        if (span < min_span || end - start + 1 < kMinSurfacePoints) continue;
+
+        std::vector<Eigen::Vector2d> local(pts.begin() + start,
+                                           pts.begin() + end + 1);
+        SurfaceCandidate candidate = make_surface_candidate(local);
+        if (candidate.rms > rms_limit) continue;
+        if (!local_slopes_are_reference_like(local, local_slope_limit))
+            continue;
+
+        auto inliers = robust_line_fit_inliers(local);
+        if (inliers.size() >= kMinSurfacePoints) return inliers;
+    }
+
+    return {};
+}
+
 std::vector<Eigen::Vector2d> select_right_platform_surface(
         const std::vector<Eigen::Vector2d>& points) {
+    auto right_edge_surface = select_right_edge_stable_surface(points);
+    if (right_edge_surface.size() >= kMinSurfacePoints)
+        return right_edge_surface;
+
     auto candidates = collect_platform_candidates(points);
     if (candidates.empty()) return {};
 
@@ -1526,8 +1632,12 @@ std::vector<std::vector<Eigen::Vector2d>> split_by_step_edge(
                      abs_slopes.begin() + abs_slopes.size() / 2,
                      abs_slopes.end());
     const double median_abs_slope = abs_slopes[abs_slopes.size() / 2];
+    const double slope_floor = profile_slope_floor(pts);
     const double edge_slope_threshold =
-            std::max(kMinSurfaceSlopeLimit * 5.0, median_abs_slope * 8.0);
+            use_small_scale_profile_thresholds(pts)
+                    ? std::max(slope_floor * 1.5, median_abs_slope * 8.0)
+                    : std::max(kMinSurfaceSlopeLimit * 5.0,
+                               median_abs_slope * 8.0);
     std::nth_element(x_steps.begin(), x_steps.begin() + x_steps.size() / 2,
                      x_steps.end());
     const double median_x_step = x_steps[x_steps.size() / 2];
@@ -3329,6 +3439,8 @@ void GapStepDetection::bspline_interpolation_dll2(
     std::atomic<int> measured_slice_count{0};
     std::vector<std::string> fast_miss_reasons(collect_profile ? n_slices : 0);
     const bool enable_raw_grid_fallback = raw_grid_fallback_enabled();
+    const bool enable_small_scale_reference_fix =
+            cloud->source_point_count_ == 0;
 
 #pragma omp parallel for schedule(dynamic, 1)
     for (int i = 0; i < static_cast<int>(n_slices); i++) {
@@ -3349,9 +3461,14 @@ void GapStepDetection::bspline_interpolation_dll2(
         // --- Fast path: try raw-grid detection first ---
         {
             std::string fallback_reason;
-            auto fast_groups = fast_path_detect_platforms(
-                    cloud->y_slices_[i],
-                    collect_profile ? &fallback_reason : nullptr);
+            std::vector<std::vector<Eigen::Vector2d>> fast_groups;
+            {
+                ScopedSmallScaleReferenceFix scoped(
+                        enable_small_scale_reference_fix);
+                fast_groups = fast_path_detect_platforms(
+                        cloud->y_slices_[i],
+                        collect_profile ? &fallback_reason : nullptr);
+            }
             if (!fast_groups.empty()) {
                 filter_groups = std::move(fast_groups);
                 // Compute limit_pts from filter_groups for downstream use
@@ -3380,7 +3497,12 @@ void GapStepDetection::bspline_interpolation_dll2(
         if (!used_fast_path && enable_raw_grid_fallback) {
             ProfileClock::time_point raw_step_start;
             if (collect_profile) raw_step_start = ProfileClock::now();
-            auto raw_groups = group_by_derivative_dll(cloud->y_slices_[i]);
+            std::vector<std::vector<Eigen::Vector2d>> raw_groups;
+            {
+                ScopedSmallScaleReferenceFix scoped(
+                        enable_small_scale_reference_fix);
+                raw_groups = group_by_derivative_dll(cloud->y_slices_[i]);
+            }
             if (collect_profile)
                 group_us_sum.fetch_add(elapsed_us(raw_step_start),
                                        std::memory_order_relaxed);
@@ -3420,7 +3542,12 @@ void GapStepDetection::bspline_interpolation_dll2(
                 resample_us_sum.fetch_add(elapsed_us(step_start),
                                           std::memory_order_relaxed);
             if (collect_profile) step_start = ProfileClock::now();
-            auto groups = group_by_derivative_dll(resampled_pts);
+            std::vector<std::vector<Eigen::Vector2d>> groups;
+            {
+                ScopedSmallScaleReferenceFix scoped(
+                        enable_small_scale_reference_fix);
+                groups = group_by_derivative_dll(resampled_pts);
+            }
             if (collect_profile)
                 group_us_sum.fetch_add(elapsed_us(step_start),
                                        std::memory_order_relaxed);
@@ -4458,12 +4585,14 @@ void GapStepDetection::calculate_gap_step_dll_plot(
 std::vector<std::vector<Eigen::Vector2d>>
 GapStepDetection::test_group_by_derivative_dll(
         std::vector<Eigen::Vector2d>& sampled_pts) {
+    ScopedSmallScaleReferenceFix scoped(true);
     return group_by_derivative_dll(sampled_pts);
 }
 
 std::vector<std::vector<Eigen::Vector2d>>
 GapStepDetection::test_filtered_groups_dll(
         std::vector<Eigen::Vector2d>& sampled_pts) {
+    ScopedSmallScaleReferenceFix scoped(true);
     auto groups = group_by_derivative_dll(sampled_pts);
     std::vector<Eigen::Vector2d> limit_pts;
     return statistics_filter(groups, limit_pts);
@@ -4471,6 +4600,7 @@ GapStepDetection::test_filtered_groups_dll(
 
 std::vector<double> GapStepDetection::test_group_line_slopes(
         std::vector<Eigen::Vector2d>& sampled_pts) {
+    ScopedSmallScaleReferenceFix scoped(true);
     std::vector<double> slopes;
     auto groups = group_by_derivative_dll(sampled_pts);
     std::vector<Eigen::Vector2d> limit_pts;
