@@ -1,10 +1,10 @@
-#include "3D/PointCloud.h"
-#include "Normal.h"
-#include "fmtfallback.h"
-
 #include <limits>
 #include <string>
 #include <vector>
+
+#include "3D/PointCloud.h"
+#include "Normal.h"
+#include "fmtfallback.h"
 
 namespace hymson3d {
 namespace pipeline {
@@ -21,14 +21,15 @@ public:
                                     double& gap_step,
                                     double& step_width,
                                     bool debug_mode);
-    static void detect_gap_step_dll_plot(std::shared_ptr<geometry::PointCloud> cloud,
-                                Eigen::Vector3d transformation_matrix,
-                                double& gap_step,
-                                double& step_width,
-                                double& height_threshold,
-                                std::vector<std::vector<double>>& temp_res,
-                                std::string& debug_path,
-                                bool debug_mode);
+    static void detect_gap_step_dll_plot(
+            std::shared_ptr<geometry::PointCloud> cloud,
+            Eigen::Vector3d transformation_matrix,
+            double& gap_step,
+            double& step_width,
+            double& height_threshold,
+            std::vector<std::vector<double>>& temp_res,
+            std::string& debug_path,
+            bool debug_mode);
     static bool detect_gap_step_dll_plot2(
             std::shared_ptr<geometry::PointCloud> cloud,
             Eigen::Vector3d transformation_matrix,
@@ -48,49 +49,48 @@ public:
                                       lineSegments& corners,
                                       bool debug_mode);
     static void bspline_interpolation_dll(geometry::PointCloud::Ptr cloud,
-                                      double height_threshold,
-                                      lineSegments& corners,
-                                      std::string& debug_path,
-                                      bool debug_mode);
-    static void bspline_interpolation_dll2(geometry::PointCloud::Ptr cloud,
                                           double height_threshold,
                                           lineSegments& corners,
-                                          std::vector<double>& LHT_width,
                                           std::string& debug_path,
-                                          bool LHT,
-                                          bool debug_mode,
-                                          std::vector<std::vector<Eigen::Vector2d>>*
-                                                  left_surface = nullptr,
-                                          std::vector<std::vector<Eigen::Vector2d>>*
-                                                  right_surface = nullptr);
+                                          bool debug_mode);
+    static void bspline_interpolation_dll2(
+            geometry::PointCloud::Ptr cloud,
+            double height_threshold,
+            lineSegments& corners,
+            std::vector<double>& LHT_width,
+            std::string& debug_path,
+            bool LHT,
+            bool debug_mode,
+            std::vector<std::vector<Eigen::Vector2d>>* left_surface = nullptr,
+            std::vector<std::vector<Eigen::Vector2d>>* right_surface = nullptr,
+            std::vector<std::string>* width_reasons = nullptr);
     static void calculate_gap_step(lineSegments& corners,
                                    double& gap_step,
                                    double& step_width);
-    static void calculate_gap_step_dll_plot(lineSegments& corners,
-                                   std::vector<double>& LHT_width,
-                                   double& gap_step,
-                                   double& step_width,
-                                   std::vector<std::vector<double>>& temp_res,
-                                   bool LHT);
+    static void calculate_gap_step_dll_plot(
+            lineSegments& corners,
+            std::vector<double>& LHT_width,
+            double& gap_step,
+            double& step_width,
+            std::vector<std::vector<double>>& temp_res,
+            bool LHT);
 #ifdef HYMSON3D_TESTING
     struct ThresholdWidthTestResult {
         double width = 0.0;
         bool valid = false;
         int lower_line_index = -1;
-        Eigen::Vector2d left_intersection =
-                Eigen::Vector2d::Constant(
-                        std::numeric_limits<double>::quiet_NaN());
-        Eigen::Vector2d right_intersection =
-                Eigen::Vector2d::Constant(
-                        std::numeric_limits<double>::quiet_NaN());
+        Eigen::Vector2d left_intersection = Eigen::Vector2d::Constant(
+                std::numeric_limits<double>::quiet_NaN());
+        Eigen::Vector2d right_intersection = Eigen::Vector2d::Constant(
+                std::numeric_limits<double>::quiet_NaN());
         std::pair<Eigen::Vector2d, Eigen::Vector2d> shifted_line;
         std::string reason;
     };
 
     static std::vector<std::vector<Eigen::Vector2d>>
     test_group_by_derivative_dll(std::vector<Eigen::Vector2d>& sampled_pts);
-    static std::vector<std::vector<Eigen::Vector2d>>
-    test_filtered_groups_dll(std::vector<Eigen::Vector2d>& sampled_pts);
+    static std::vector<std::vector<Eigen::Vector2d>> test_filtered_groups_dll(
+            std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<double> test_group_line_slopes(
             std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<std::vector<Eigen::Vector2d>>
@@ -109,8 +109,7 @@ public:
                                  std::vector<Eigen::Vector2d> limit_pts);
     static int test_mark_rejected_debug_images(const std::string& debug_dir);
     // 3D consistency filter self-test entry
-    static int test_3d_consistency_filter(
-            const std::string& debug_dir);
+    static int test_3d_consistency_filter(const std::string& debug_dir);
 #endif
 
 private:
@@ -131,7 +130,7 @@ private:
             std::vector<Eigen::Vector2d>& sampled_pts);
     static std::vector<std::vector<Eigen::Vector2d>> statistics_filter(
             std::vector<std::vector<Eigen::Vector2d>>& clusters);
-    static std::vector<std::vector<Eigen::Vector2d>>  statistics_filter(
+    static std::vector<std::vector<Eigen::Vector2d>> statistics_filter(
             std::vector<std::vector<Eigen::Vector2d>>& clusters,
             std::vector<Eigen::Vector2d>& limit_pts);
     static void plot_clusters(
@@ -147,7 +146,8 @@ private:
             std::vector<std::vector<Eigen::Vector2d>> intersections,
             std::vector<Eigen::Vector2d>& limit_pts,
             std::string& debug_path,
-            int img_id);
+            int img_id,
+            const std::string& width_reason = "");
     static void plot_clusters_dll_lht(
             std::vector<Eigen::Vector2d>& cloud_pts,
             std::vector<Eigen::Vector2d>& resampled_pts,
@@ -157,7 +157,8 @@ private:
             std::vector<std::vector<Eigen::Vector2d>> intersections,
             std::vector<Eigen::Vector2d>& limit_pts,
             std::string& debug_path,
-            int img_id);
+            int img_id,
+            const std::string& width_reason = "");
     static void plot_clusters_dll(
             std::vector<Eigen::Vector2d>& resampled_pts,
             std::vector<std::vector<Eigen::Vector2d>>& clusters,
@@ -186,7 +187,8 @@ private:
             double& left_height_threshold,
             double& right_height_threshold,
             std::vector<Eigen::Vector2d>& limit_pts,
-            bool LHT);
+            bool LHT,
+            std::string* width_reason = nullptr);
 };
 
 }  // namespace pipeline

@@ -306,6 +306,11 @@ def preprocess_v2_image(method, height, intensity):
     if intensity is None and "intensity" in method:
         raise ValueError(f"{method} requires intensity SubIFD")
 
+    if method == "ia_rank_residual_intensity_gradient":
+        return pre_process_data.ia_rank_residual_intensity_gradient_image(
+            height, intensity
+        )
+
     features = invalid_aware_float_features(height)
     residual = features["residual"]
     clean = features["clean"]
@@ -346,9 +351,6 @@ def preprocess_v2_image(method, height, intensity):
 
     if method == "ia_normalz_residual_intensity":
         return cv2.merge([residual_u8, intensity_u8, normal_slope_u8(clean)])
-
-    if method == "ia_rank_residual_intensity_gradient":
-        return cv2.merge([local_zscore_u8(residual), intensity_u8, gradient_u8])
 
     raise ValueError(f"unknown preprocess-v2 method: {method}")
 

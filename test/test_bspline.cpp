@@ -471,13 +471,12 @@ static int run_self_test(const char* debug_dir) {
                   << std::endl;
         return 1;
     }
-    auto [z_scaled_right_min_it, z_scaled_right_max_it] =
-            std::minmax_element(
-                    z_scaled_transition_groups[1].begin(),
-                    z_scaled_transition_groups[1].end(),
-                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
-                        return a.x() < b.x();
-                    });
+    auto [z_scaled_right_min_it, z_scaled_right_max_it] = std::minmax_element(
+            z_scaled_transition_groups[1].begin(),
+            z_scaled_transition_groups[1].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
     const double z_scaled_right_slope =
             endpoint_slope(z_scaled_transition_groups[1]);
     if (z_scaled_right_min_it->x() < 455.0 ||
@@ -486,8 +485,31 @@ static int run_self_test(const char* debug_dir) {
         std::cerr << "z-scaled fast path should still use the top right "
                      "support, got x=["
                   << z_scaled_right_min_it->x() << ", "
-                  << z_scaled_right_max_it->x() << "] slope="
-                  << z_scaled_right_slope << std::endl;
+                  << z_scaled_right_max_it->x()
+                  << "] slope=" << z_scaled_right_slope << std::endl;
+        return 1;
+    }
+
+    std::vector<Eigen::Vector2d> vertical_edge_profile{
+            {0.0, 5.0},  {1.0, 5.0},  {2.0, 5.0},  {3.0, 5.0},  {4.0, 5.0},
+            {5.0, 5.0},  {6.0, 5.0},  {7.0, 5.0},  {8.0, 5.0},  {9.0, 5.0},
+            {10.0, 5.0}, {10.0, 3.0}, {10.0, 1.0}, {11.0, 1.0}, {12.0, 1.0},
+            {13.0, 1.0}, {14.0, 1.0}, {15.0, 1.0}, {16.0, 1.0}, {17.0, 1.0},
+            {18.0, 1.0}, {19.0, 1.0}, {20.0, 1.0}, {20.0, 3.0}, {20.0, 5.0},
+            {21.0, 5.0}, {22.0, 5.0}, {23.0, 5.0}, {24.0, 5.0}, {25.0, 5.0},
+            {26.0, 5.0}, {27.0, 5.0}, {28.0, 5.0}, {29.0, 5.0}, {30.0, 5.0},
+    };
+    const auto vertical_width =
+            pipeline::GapStepDetection::test_compute_threshold_width(
+                    vertical_edge_profile,
+                    {Eigen::Vector2d(0.0, 5.0), Eigen::Vector2d(10.0, 5.0)},
+                    {Eigen::Vector2d(20.0, 5.0), Eigen::Vector2d(30.0, 5.0)},
+                    2.5, 10.0, 20.0);
+    if (!vertical_width.valid || std::abs(vertical_width.width - 10.0) > 1e-6) {
+        std::cerr << "threshold width should use vertical same-x envelope, "
+                  << "valid=" << vertical_width.valid
+                  << " width=" << vertical_width.width
+                  << " reason=" << vertical_width.reason << std::endl;
         return 1;
     }
 
@@ -512,8 +534,7 @@ static int run_self_test(const char* debug_dir) {
         std::string base(debug_dir);
         if (!base.empty() && base.back() != '/') base += "/";
         write_self_test_debug(base + "self_test_low_z_sloped_gap.png",
-                              low_z_sloped_gap_pts,
-                              low_z_sloped_gap_groups);
+                              low_z_sloped_gap_pts, low_z_sloped_gap_groups);
     }
     if (low_z_sloped_gap_groups.size() != 2 ||
         low_z_sloped_gap_groups[1].empty()) {
@@ -522,22 +543,18 @@ static int run_self_test(const char* debug_dir) {
                   << std::endl;
         return 1;
     }
-    auto [low_z_right_min_it, low_z_right_max_it] =
-            std::minmax_element(
-                    low_z_sloped_gap_groups[1].begin(),
-                    low_z_sloped_gap_groups[1].end(),
-                    [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
-                        return a.x() < b.x();
-                    });
-    const double low_z_right_slope =
-            endpoint_slope(low_z_sloped_gap_groups[1]);
-    if (low_z_right_min_it->x() < 164.0 ||
-        std::abs(low_z_right_slope) > 0.05) {
+    auto [low_z_right_min_it, low_z_right_max_it] = std::minmax_element(
+            low_z_sloped_gap_groups[1].begin(),
+            low_z_sloped_gap_groups[1].end(),
+            [](const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
+                return a.x() < b.x();
+            });
+    const double low_z_right_slope = endpoint_slope(low_z_sloped_gap_groups[1]);
+    if (low_z_right_min_it->x() < 164.0 || std::abs(low_z_right_slope) > 0.05) {
         std::cerr << "low-z sloped gap should reject the diagonal transition "
                      "as a reference, got right x=["
-                  << low_z_right_min_it->x() << ", "
-                  << low_z_right_max_it->x() << "] slope="
-                  << low_z_right_slope << std::endl;
+                  << low_z_right_min_it->x() << ", " << low_z_right_max_it->x()
+                  << "] slope=" << low_z_right_slope << std::endl;
         return 1;
     }
 
@@ -554,8 +571,7 @@ static int run_self_test(const char* debug_dir) {
         std::string base(debug_dir);
         if (!base.empty() && base.back() != '/') base += "/";
         write_self_test_debug(base + "self_test_scaled_sloped_gap.png",
-                              scaled_sloped_gap_pts,
-                              scaled_sloped_gap_groups);
+                              scaled_sloped_gap_pts, scaled_sloped_gap_groups);
     }
     if (scaled_sloped_gap_groups.size() != 2 ||
         scaled_sloped_gap_groups[1].empty()) {
@@ -578,8 +594,8 @@ static int run_self_test(const char* debug_dir) {
         std::cerr << "scaled sloped gap should reject the diagonal transition "
                      "as a reference, got right x=["
                   << scaled_gap_right_min_it->x() << ", "
-                  << scaled_gap_right_max_it->x() << "] slope="
-                  << scaled_gap_right_slope << std::endl;
+                  << scaled_gap_right_max_it->x()
+                  << "] slope=" << scaled_gap_right_slope << std::endl;
         return 1;
     }
 
@@ -762,8 +778,8 @@ static int run_self_test(const char* debug_dir) {
     }
     for (int x = 71; x <= 90; ++x) {
         const double t = static_cast<double>(x - 71) / 19.0;
-        long_valley_floor_pts.emplace_back(
-                static_cast<double>(x), 49.0 * (1.0 - t) + 12.0 * t);
+        long_valley_floor_pts.emplace_back(static_cast<double>(x),
+                                           49.0 * (1.0 - t) + 12.0 * t);
     }
     for (int x = 91; x <= 125; ++x) {
         long_valley_floor_pts.emplace_back(static_cast<double>(x),
@@ -771,8 +787,8 @@ static int run_self_test(const char* debug_dir) {
     }
     for (int x = 126; x <= 132; ++x) {
         const double t = static_cast<double>(x - 126) / 6.0;
-        long_valley_floor_pts.emplace_back(
-                static_cast<double>(x), 12.2 * (1.0 - t) + 53.0 * t);
+        long_valley_floor_pts.emplace_back(static_cast<double>(x),
+                                           12.2 * (1.0 - t) + 53.0 * t);
     }
     for (int x = 133; x <= 205; ++x) {
         long_valley_floor_pts.emplace_back(static_cast<double>(x),
@@ -785,8 +801,7 @@ static int run_self_test(const char* debug_dir) {
         std::string base(debug_dir);
         if (!base.empty() && base.back() != '/') base += "/";
         write_self_test_debug(base + "self_test_long_valley_floor.png",
-                              long_valley_floor_pts,
-                              long_valley_floor_groups);
+                              long_valley_floor_pts, long_valley_floor_groups);
     }
     if (long_valley_floor_groups.size() != 2 ||
         long_valley_floor_groups[0].empty() ||
@@ -959,9 +974,8 @@ static int run_self_test(const char* debug_dir) {
         ply_like_valley_pts.emplace_back(static_cast<double>(x),
                                          0.05 + 0.0005 * (x - 133));
     }
-    auto ply_like_groups =
-            pipeline::GapStepDetection::test_filtered_groups_dll(
-                    ply_like_valley_pts);
+    auto ply_like_groups = pipeline::GapStepDetection::test_filtered_groups_dll(
+            ply_like_valley_pts);
     if (debug_dir) {
         std::string base(debug_dir);
         if (!base.empty() && base.back() != '/') base += "/";
@@ -981,8 +995,8 @@ static int run_self_test(const char* debug_dir) {
             });
     const double ply_right_slope = endpoint_slope(ply_like_groups[1]);
     const double ply_right_mean_y = mean_y(ply_like_groups[1]);
-    if (ply_right_min_it->x() < 128.0 ||
-        std::abs(ply_right_slope) > 0.05 || ply_right_mean_y < -0.2) {
+    if (ply_right_min_it->x() < 128.0 || std::abs(ply_right_slope) > 0.05 ||
+        ply_right_mean_y < -0.2) {
         std::cerr << "PLY-like valley right support should use the right "
                      "platform, got x=["
                   << ply_right_min_it->x() << ", " << ply_right_max_it->x()
@@ -1121,16 +1135,18 @@ static int run_self_test(const char* debug_dir) {
         auto run_ratio_case = [&](double z_ratio, double& height,
                                   double& width) {
             auto cloud = std::make_shared<geometry::PointCloud>();
-            core::converter::tiff_to_pointcloud(
-                    valley_tiff_path, cloud, Eigen::Vector3d(1, 1, z_ratio),
-                    false);
+            core::converter::tiff_to_pointcloud(valley_tiff_path, cloud,
+                                                Eigen::Vector3d(1, 1, z_ratio),
+                                                false);
             Eigen::Vector3d transformation_matrix(1, 1, 1);
             double height_threshold = 1.0;
             std::vector<std::vector<double>> temp_res(2);
             std::string case_debug_path = ratio_tiff_dir;
-            const bool ok = pipeline::GapStepDetection::detect_gap_step_dll_plot2(
-                    cloud, transformation_matrix, height, width,
-                    height_threshold, temp_res, case_debug_path, true, false);
+            const bool ok =
+                    pipeline::GapStepDetection::detect_gap_step_dll_plot2(
+                            cloud, transformation_matrix, height, width,
+                            height_threshold, temp_res, case_debug_path, true,
+                            false);
             if (!ok) {
                 std::cerr << "z-ratio invariance detect failed for z_ratio="
                           << z_ratio << std::endl;
@@ -1144,8 +1160,7 @@ static int run_self_test(const char* debug_dir) {
         double w1 = 0.0;
         double h40 = 0.0;
         double w40 = 0.0;
-        if (!run_ratio_case(1.0, h1, w1) ||
-            !run_ratio_case(40.0, h40, w40)) {
+        if (!run_ratio_case(1.0, h1, w1) || !run_ratio_case(40.0, h40, w40)) {
             return 1;
         }
         if (w1 <= 0.0 || w40 <= 0.0 || std::abs(w1 - w40) > 0.75 ||
@@ -1165,6 +1180,10 @@ static int run_self_test(const char* debug_dir) {
     mark_debug_dir += "self_test_mark_rejected/";
     if (pipeline::GapStepDetection::test_mark_rejected_debug_images(
                 mark_debug_dir) != 0) {
+        return 1;
+    }
+
+    if (pipeline::GapStepDetection::test_width_height_independence() != 0) {
         return 1;
     }
 
@@ -1221,10 +1240,10 @@ int main(int argc, char** argv) {
     }
 
     // --- 算法参数 ---
-    double step_height = 0;  // [输出] 检测到的台阶高度
-    double step_width = 0;   // [输出] 检测到的台阶宽度
+    double step_height = 0;       // [输出] 检测到的台阶高度
+    double step_width = 0;        // [输出] 检测到的台阶宽度
     double height_threshold = 1;  // Z offset used for threshold-width measure.
-    bool LHT = true;  // true: 左高右低, false: 左低右高
+    bool LHT = true;              // true: 左高右低, false: 左低右高
     Eigen::Vector3d transformation_matrix = Eigen::Vector3d(1, 1, 1);
     std::vector<std::vector<double>> temp_res;
     temp_res.resize(2);

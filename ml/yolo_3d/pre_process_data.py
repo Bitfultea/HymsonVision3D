@@ -117,6 +117,116 @@ def local_roughness(data, ksize=7):
     return np.sqrt(variance)
 
 
+def repair_isolated_height_outliers(height,
+                                    global_percentiles=(0.05, 99.95),
+                                    median_ksize=5,
+                                    max_component_area=4):
+    """修复非有限值和极小孤立飞点，保留成片真实结构。"""
+    height = np.asarray(height, dtype=np.float32)
+    finite = np.isfinite(height)
+    if not np.any(finite):
+        return (
+            np.zeros_like(height, dtype=np.float32),
+            np.ones_like(height, dtype=bool),
+        )
+
+    repaired = height.copy()
+    finite_values = height[finite]
+    fill_value = float(np.median(finite_values))
+    filled = np.where(finite, height, fill_value).astype(np.float32)
+    median_ksize = median_ksize if median_ksize % 2 == 1 else median_ksize + 1
+    local_median = cv2.medianBlur(filled, median_ksize)
+
+    low, high = np.percentile(finite_values, global_percentiles)
+    candidate = (~finite) | (filled < low) | (filled > high)
+    repair_mask = ~finite
+
+    labels_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        candidate.astype(np.uint8), connectivity=8
+    )
+    for label_index in range(1, labels_count):
+        area = stats[label_index, cv2.CC_STAT_AREA]
+        if area <= max_component_area:
+            repair_mask |= labels == label_index
+
+    repaired[repair_mask] = local_median[repair_mask]
+    return repaired, repair_mask
+
+
+def invalid_aware_float_features(height, baseline_sigma=15):
+    """先修复孤立无效点，再输出 float 级高度残差、梯度和曲率特征。"""
+    repaired_height, _ = repair_isolated_height_outliers(height)
+    clean = preprocess_height_for_features(repaired_height)
+    baseline = cv2.GaussianBlur(clean, (0, 0), baseline_sigma)
+    residual = clean - baseline
+    sobel_x = cv2.Sobel(clean, cv2.CV_32F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(clean, cv2.CV_32F, 0, 1, ksize=3)
+    gradient = cv2.magnitude(sobel_x, sobel_y)
+    laplacian = cv2.Laplacian(residual, cv2.CV_32F, ksize=3)
+    return {
+        "clean": clean,
+        "residual": residual,
+        "gradient": gradient,
+        "laplacian": laplacian,
+    }
+
+
+def local_zscore_u8(data, ksize=31):
+    """将局部 z-score 排名式残差映射到 uint8，突出小局部异常。"""
+    if ksize % 2 == 0:
+        ksize += 1
+    data = np.asarray(data, dtype=np.float32)
+    mean = cv2.blur(data, (ksize, ksize))
+    mean_sq = cv2.blur(data * data, (ksize, ksize))
+    std = np.sqrt(np.maximum(mean_sq - mean * mean, 0.0))
+    zscore = (data - mean) / (std + 1e-3)
+    return signed_robust_normalize(zscore, 99.0)
+
+
+def ia_rank_residual_intensity_gradient_image(height,
+                                              intensity,
+                                              baseline_sigma=15,
+                                              local_zscore_ksize=31):
+    """
+    生成当前推荐的 2.5D 缺陷检测三通道图。
+
+    B: invalid-aware residual 的局部 z-score
+    G: intensity SubIFD
+    R: invalid-aware height gradient
+    """
+    if intensity is None:
+        raise ValueError(
+            "ia_rank_residual_intensity_gradient requires intensity SubIFD"
+        )
+    if height.shape[:2] != intensity.shape[:2]:
+        raise ValueError(
+            f"height/intensity size mismatch: {height.shape} vs {intensity.shape}"
+        )
+
+    features = invalid_aware_float_features(height, baseline_sigma=baseline_sigma)
+    residual_u8 = local_zscore_u8(
+        features["residual"], ksize=local_zscore_ksize
+    )
+    intensity_u8 = robust_normalize(intensity, 0.5, 99.5)
+    gradient_u8 = robust_normalize(features["gradient"], 0.0, 99.0)
+    return cv2.merge([residual_u8, intensity_u8, gradient_u8])
+
+
+def convert_tiff_to_ia_rank_residual_intensity_gradient(tiff_path,
+                                                        output_path,
+                                                        baseline_sigma=15,
+                                                        local_zscore_ksize=31):
+    """将双通道 2.5D TIFF 转为 ia_rank_residual_intensity_gradient PNG。"""
+    height, intensity = read_tiff_height_intensity(tiff_path)
+    merged_img = ia_rank_residual_intensity_gradient_image(
+        height,
+        intensity,
+        baseline_sigma=baseline_sigma,
+        local_zscore_ksize=local_zscore_ksize,
+    )
+    cv2.imwrite(output_path, merged_img)
+
+
 def height_defect_feature_channels(height,
                                    baseline_sigma=15,
                                    clip_percent=(0.5, 99.5),
