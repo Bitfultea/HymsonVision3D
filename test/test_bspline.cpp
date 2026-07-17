@@ -1244,7 +1244,7 @@ int main(int argc, char** argv) {
     double step_width = 0;        // [输出] 检测到的台阶宽度
     double height_threshold = 1;  // Z offset used for threshold-width measure.
     bool LHT = true;              // true: 左高右低, false: 左低右高
-    Eigen::Vector3d transformation_matrix = Eigen::Vector3d(1, 1, 1);
+    Eigen::Vector3d transformation_matrix = Eigen::Vector3d(1, 1, 50);
     std::vector<std::vector<double>> temp_res;
     temp_res.resize(2);
     std::string debug_path(debug_dir);  // debug 输出目录
@@ -1254,9 +1254,9 @@ int main(int argc, char** argv) {
             height_threshold, temp_res, debug_path, LHT, debug_mode);
 
     double step_height_ =
-            (step_height / transformation_matrix.z()) / tiff_ratio.z();
+            (step_height / transformation_matrix.z());
     double step_width_ =
-            (step_width / transformation_matrix.x()) / tiff_ratio.x();
+            (step_width / transformation_matrix.x());
     std::cout << "step_height: " << step_height_ << std::endl;
     std::cout << "step_width: " << step_width_ << std::endl;
     wait_for_key();

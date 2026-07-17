@@ -17,7 +17,8 @@ double compute_fpfh_density(int idx,
                             int knn);
 
 std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
-                                               bool debug_mode = false);
+                                               bool debug_mode = false,
+                                               const std::string& debug_path = "");
 std::pair<bool, cv::Point2f> detect_deep_ring(const geometry::PointCloud& cloud,
                                               float z_gap = 10,
                                               int central_area = 50000,

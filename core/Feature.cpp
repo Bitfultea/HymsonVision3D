@@ -7,12 +7,25 @@
 #include <pcl/point_types.h>
 
 #include "Converter.h"
+#include "FileSystem.h"
 
 namespace hymson3d {
 namespace core {
 namespace feature {
 
 typedef pcl::PointCloud<pcl::FPFHSignature33> fpfhFeature;
+
+// Returns a directory string guaranteed to end with a separator (and creates
+// it). Returns "" when debug is off or no path is given, so callers can fall
+// back to the original behavior of writing to the working directory.
+static std::string prepare_debug_dir(bool debug_mode,
+                                     const std::string& debug_path) {
+    if (!debug_mode || debug_path.empty()) return "";
+    // utility::filesystem::MakeDirectory_dll(debug_path);
+    std::string dir = debug_path;
+    if (dir.back() != '/' && dir.back() != '\\') dir += "/";
+    return dir;
+}
 
 Eigen::MatrixXf compute_fpfh(geometry::PointCloud& cloud) {
     LOG_DEBUG("Start Computing FPFH feature");
@@ -78,7 +91,8 @@ Eigen::MatrixXf compute_fpfh(geometry::PointCloud& cloud) {
  *         第二个元素是圆环中心点的坐标。如果未检测到圆环，则返回(false, (0,0))
  */
 std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
-                                               bool debug_mode) {
+                                               bool debug_mode,
+                                               const std::string& debug_path) {
     if (img.empty()) {
         LOG_ERROR("Image is empty");
         return {false, cv::Point2f(0, 0)};
@@ -142,11 +156,12 @@ std::pair<bool, cv::Point2f> detect_green_ring(const cv::Mat& img,
 
         // draw the ellipse
         if (debug_mode) {
+            std::string ddir = prepare_debug_dir(debug_mode, debug_path);
             cv::ellipse(img, best_ellipse, cv::Scalar(0, 255, 0),
                         2);  // ellipse
             cv::circle(img, center, 5, cv::Scalar(0, 0, 255),
                        -1);  // centre
-            cv::imwrite("circle_location.jpg", img);
+            cv::imwrite(ddir + "circle_location.jpg", img);
         }
         LOG_INFO("圆环中心坐标: ({},{})", static_cast<int>(center.x),
                  static_cast<int>(center.y));

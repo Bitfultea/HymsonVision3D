@@ -24,7 +24,8 @@ public:
                                     int min_planar_points = 100,
                                     int method = 0,
                                     int down_sample_size = 1,
-                                    bool debug_mode = true);
+                                    bool debug_mode = true,
+                                    const std::string& debug_path = "");
 
     static bool measure_pindisk_heightlevel_auto(
             std::shared_ptr<geometry::PointCloud> cloud,
@@ -36,7 +37,8 @@ public:
             float distance_threshold = 0.0,
             int min_planar_points = 100,
             int down_sample_size = 1,
-            bool debug_mode = true);
+            bool debug_mode = true,
+            const std::string& debug_path = "");
 
     static bool measure_pindisk_heightlevel_region(
             std::shared_ptr<geometry::PointCloud> cloud,
@@ -48,7 +50,8 @@ public:
             float distance_threshold = 0.0,
             int min_planar_points = 100,
             int down_sample_size = 1,
-            bool debug_mode = true);
+            bool debug_mode = true,
+            const std::string& debug_path = "");
 
     static bool measure_pindisk_heightlevel_region_dll(
             std::shared_ptr<geometry::PointCloud> bottom_cloud,
@@ -58,7 +61,8 @@ public:
             float normal_angle_threshold,
             float distance_threshold,
             int min_planar_points,
-            bool debug_mode);
+            bool debug_mode,
+            const std::string& debug_path = "");
 
     static void measure_pindisk_heightlevel_region_dllv2(
             std::vector<Eigen::Vector3d> bottom_points,
@@ -68,13 +72,15 @@ public:
             float normal_angle_threshold,
             float distance_threshold,
             int min_planar_points,
-            bool debug_mode);
+            bool debug_mode,
+            const std::string& debug_path = "");
 
     static void measure_pindisk_heightlevel(
             std::shared_ptr<geometry::PointCloud> bottom_cloud,
             std::shared_ptr<geometry::PointCloud> central_cloud,
             DiskLevelMeasurementResult* result,
-            bool debug_mode);
+            bool debug_mode,
+            const std::string& debug_path = "");
 
 private:
     static void segment_plane_instances(
@@ -111,7 +117,8 @@ private:
             float distance_threshold = 0.0,
             int min_planar_points = 100,
             bool use_ransac = true,
-            bool debug_mode = true);
+            bool debug_mode = true,
+            const std::string& debug_path = "");
 
     static geometry::Plane::Ptr get_plane_in_range_all(
             std::shared_ptr<geometry::PointCloud> region_cloud,
@@ -120,7 +127,8 @@ private:
             float distance_threshold = 0.0,
             int min_planar_points = 100,
             bool use_ransac = true,
-            bool debug_mode = true);
+            bool debug_mode = true,
+            const std::string& debug_path = "");
 };
 
 }  // namespace pipeline

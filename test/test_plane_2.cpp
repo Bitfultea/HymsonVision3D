@@ -18,6 +18,7 @@ using namespace hymson3d;
 int main(int argc, char** argv) {
     int detect_mode = 2;
     bool debug_mode = true;
+    std::string debug_path = R"(D:\HymsonVision\MPHAResults\)";
 
     geometry::PointCloud::Ptr pointcloud =
             std::make_shared<geometry::PointCloud>();
@@ -36,8 +37,10 @@ int main(int argc, char** argv) {
     core::PointCloudRaster raster;
     std::cout << "type of tiff_image:" << tiff_image.type() << std::endl;
     cv::Mat pre_processed = raster.project_to_feature_frame(tiff_image);
-    std::pair<bool, cv::Point2f> disk_centre =
-            core::feature::detect_green_ring(pre_processed, debug_mode);
+    std::pair<bool, cv::Point2f> disk_centre = {true, cv::Point2f(354.0, 304.0)};
+//     std::pair<bool, cv::Point2f> disk_centre =
+//             core::feature::detect_green_ring(pre_processed, debug_mode,
+//                                              debug_path);
     //     std::pair<bool, cv::Point2f> disk_centre =
     //     core::feature::detect_deep_ring(
     //             *pointcloud, 10.0, 50000, debug_mode);
@@ -63,7 +66,7 @@ int main(int argc, char** argv) {
         pipeline::DiskLevelMeasurement::perform_measurement(
                 pointcloud, param, &result, disk_centre, central_plane_size,
                 normal_degree, distance_threshold, min_planar_points, method,
-                down_sample_size, debug_mode);
+                down_sample_size, debug_mode, debug_path);
         //     pipeline::DiskLevelMeasurement::measure_pindisk_heightlevel(
         //             pointcloud, param, &result, central_plane_size,
         //             normal_degree, distance_threshold, min_planar_points,

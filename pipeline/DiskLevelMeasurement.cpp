@@ -15,6 +15,17 @@
 
 namespace hymson3d {
 namespace pipeline {
+// Returns a directory string guaranteed to end with a separator (and creates
+// it). Returns "" when debug is off or no path is given, so callers fall back
+// to the original behavior of writing to the working directory.
+static std::string prepare_debug_dir(bool debug_mode,
+                                     const std::string& debug_path) {
+    if (!debug_mode || debug_path.empty()) return "";
+    // utility::filesystem::MakeDirectory_dll(debug_path);
+    std::string dir = debug_path;
+    if (dir.back() != '/' && dir.back() != '\\') dir += "/";
+    return dir;
+}
 std::vector<float> statistical_filter(const std::vector<float>& data,
                                       const float& n) {
     if (data.empty()) return {};
@@ -144,13 +155,14 @@ bool DiskLevelMeasurement::perform_measurement(
         int min_planar_points,
         int method,
         int down_sample_size,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
     bool status;
     if (method == 0) {
         status = measure_pindisk_heightlevel_auto(
                 cloud, param, result, disk_centre, central_plane_size,
                 normal_angle_threshold, distance_threshold, min_planar_points,
-                down_sample_size, debug_mode);
+                down_sample_size, debug_mode, debug_path);
         if (!status) {
             LOG_ERROR("Failed to perform measurement");
             return false;
@@ -159,7 +171,7 @@ bool DiskLevelMeasurement::perform_measurement(
         status = measure_pindisk_heightlevel_region(
                 cloud, param, result, disk_centre, central_plane_size,
                 normal_angle_threshold, distance_threshold, min_planar_points,
-                down_sample_size, debug_mode);
+                down_sample_size, debug_mode, debug_path);
         if (!status) {
             LOG_ERROR("Failed to perform measurement");
             return false;
@@ -182,7 +194,9 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
         float distance_threshold,
         int min_planar_points,
         int down_sample_size,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
+    std::string ddir = prepare_debug_dir(debug_mode, debug_path);
     // get planar points
     std::vector<geometry::Plane::Ptr> planes;
     segment_plane_instances(cloud, param, planes, normal_angle_threshold,
@@ -195,7 +209,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
                 cloud->colors_[planes[i]->inlier_idx_[j]] = color;
             }
         }
-        utility::write_ply("planar_cluster_0.ply", cloud,
+        utility::write_ply(ddir + "planar_cluster_0.ply", cloud,
                            utility::FileFormat::BINARY);
     }
 
@@ -210,7 +224,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
                 cloud->colors_[planes[i]->inlier_idx_[j]] = color;
             }
         }
-        utility::write_ply("planar_cluster_1.ply", cloud,
+        utility::write_ply(ddir + "planar_cluster_1.ply", cloud,
                            utility::FileFormat::BINARY);
     }
 
@@ -229,7 +243,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_auto(
         for (int i = 0; i < plane_pair.second->inlier_idx_.size(); i++) {
             cloud->colors_[plane_pair.second->inlier_idx_[i]] = color_bot;
         }
-        utility::write_ply("planar_cluster_2.ply", cloud,
+        utility::write_ply(ddir + "planar_cluster_2.ply", cloud,
                            utility::FileFormat::BINARY);
     }
 
@@ -249,7 +263,9 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region(
         float distance_threshold,
         int min_planar_points,
         int down_sample_size,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
+    std::string ddir = prepare_debug_dir(debug_mode, debug_path);
     int row = cloud->height_;
     int col = cloud->width_;
     std::vector<Eigen::Vector3d> bottom_points;
@@ -278,9 +294,9 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region(
                 bot_plane->center_.z(), bot_plane->normal_.x(),
                 bot_plane->normal_.y(), bot_plane->normal_.z());
         utility::write_plane_mesh_ply(
-                "bottom_plane.ply", *bot_plane, bot_cloud->GetMinBound().x(),
-                bot_cloud->GetMaxBound().x(), bot_cloud->GetMinBound().y(),
-                bot_cloud->GetMaxBound().y(), 100);
+                ddir + "bottom_plane.ply", *bot_plane,
+                bot_cloud->GetMinBound().x(), bot_cloud->GetMaxBound().x(),
+                bot_cloud->GetMinBound().y(), bot_cloud->GetMaxBound().y(), 100);
     }
 
     std::shared_ptr<core::Filter> filter = std::make_shared<core::Filter>();
@@ -290,7 +306,8 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region(
     geometry::Plane::Ptr central_plane =
             get_plane_in_range(cloud, param, disk_centre, central_plane_size,
                                normal_angle_threshold, distance_threshold,
-                               min_planar_points, use_ransc, debug_mode);
+                               min_planar_points, use_ransc, debug_mode,
+                               debug_path);
     if (central_plane == nullptr) {
         LOG_ERROR("Cannot detect central plane.");
         return false;
@@ -304,7 +321,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region(
                 central_plane->center_.z(), central_plane->normal_.x(),
                 central_plane->normal_.y(), central_plane->normal_.z());
         utility::write_plane_mesh_ply(
-                "central_plane.ply", *central_plane,
+                ddir + "central_plane.ply", *central_plane,
                 central_plane->center_.x() - central_plane_size / 2,
                 central_plane->center_.x() + central_plane_size / 2,
                 central_plane->center_.y() - central_plane_size / 2,
@@ -326,7 +343,9 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region_dll(
         float normal_angle_threshold,
         float distance_threshold,
         int min_planar_points,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
+    std::string ddir = prepare_debug_dir(debug_mode, debug_path);
     core::PlaneDetection pd;
     // geometry::Plane::Ptr bot_plane =
     //         pd.fit_a_plane_ransc(*bot_cloud, 2, 4, 10, 0.9999999);
@@ -338,7 +357,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region_dll(
                 bot_plane->center_.x(), bot_plane->center_.y(),
                 bot_plane->center_.z(), bot_plane->normal_.x(),
                 bot_plane->normal_.y(), bot_plane->normal_.z());
-        utility::write_plane_mesh_ply("bottom_plane.ply", *bot_plane,
+        utility::write_plane_mesh_ply(ddir + "bottom_plane.ply", *bot_plane,
                                       bottom_cloud->GetMinBound().x(),
                                       bottom_cloud->GetMaxBound().x(),
                                       bottom_cloud->GetMinBound().y(),
@@ -348,7 +367,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region_dll(
     bool use_ransc = true;
     geometry::Plane::Ptr central_plane = get_plane_in_range_all(
             central_cloud, param, normal_angle_threshold, distance_threshold,
-            min_planar_points, use_ransc, debug_mode);
+            min_planar_points, use_ransc, debug_mode, debug_path);
     if (central_plane == nullptr) {
         LOG_ERROR("Cannot detect central plane.");
         return false;
@@ -361,7 +380,7 @@ bool DiskLevelMeasurement::measure_pindisk_heightlevel_region_dll(
                 central_plane->center_.x(), central_plane->center_.y(),
                 central_plane->center_.z(), central_plane->normal_.x(),
                 central_plane->normal_.y(), central_plane->normal_.z());
-        utility::write_plane_mesh_ply("central_plane.ply", *central_plane,
+        utility::write_plane_mesh_ply(ddir + "central_plane.ply", *central_plane,
                                       central_cloud->GetMinBound().x(),
                                       central_cloud->GetMaxBound().x(),
                                       central_cloud->GetMinBound().y(),
@@ -383,7 +402,9 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel_region_dllv2(
         float normal_angle_threshold,
         float distance_threshold,
         int min_planar_points,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
+    std::string ddir = prepare_debug_dir(debug_mode, debug_path);
     geometry::PointCloud::Ptr bottom_cloud =
             std::make_shared<geometry::PointCloud>();
     bottom_cloud->points_ = bottom_points;
@@ -398,7 +419,7 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel_region_dllv2(
                 bot_plane->center_.x(), bot_plane->center_.y(),
                 bot_plane->center_.z(), bot_plane->normal_.x(),
                 bot_plane->normal_.y(), bot_plane->normal_.z());
-        utility::write_plane_mesh_ply("bottom_plane.ply", *bot_plane,
+        utility::write_plane_mesh_ply(ddir + "bottom_plane.ply", *bot_plane,
                                       bottom_cloud->GetMinBound().x(),
                                       bottom_cloud->GetMaxBound().x(),
                                       bottom_cloud->GetMinBound().y(),
@@ -408,7 +429,7 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel_region_dllv2(
     bool use_ransc = true;
     geometry::Plane::Ptr central_plane = get_plane_in_range_all(
             central_cloud, param, normal_angle_threshold, distance_threshold,
-            min_planar_points, use_ransc, debug_mode);
+            min_planar_points, use_ransc, debug_mode, debug_path);
 
     if (debug_mode) {
         LOG_DEBUG(
@@ -417,7 +438,7 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel_region_dllv2(
                 central_plane->center_.x(), central_plane->center_.y(),
                 central_plane->center_.z(), central_plane->normal_.x(),
                 central_plane->normal_.y(), central_plane->normal_.z());
-        utility::write_plane_mesh_ply("central_plane.ply", *central_plane,
+        utility::write_plane_mesh_ply(ddir + "central_plane.ply", *central_plane,
                                       central_cloud->GetMinBound().x(),
                                       central_cloud->GetMaxBound().x(),
                                       central_cloud->GetMinBound().y(),
@@ -433,7 +454,9 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
         std::shared_ptr<geometry::PointCloud> bottom_cloud,
         std::shared_ptr<geometry::PointCloud> central_cloud,
         DiskLevelMeasurementResult* result,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
+    std::string ddir = prepare_debug_dir(debug_mode, debug_path);
     core::PlaneDetection pd;
     // geometry::Plane::Ptr bot_plane =
     //         pd.fit_a_plane_ransc(*bot_cloud, 2, 4, 10, 0.9999999);
@@ -445,7 +468,7 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
                 bot_plane->center_.x(), bot_plane->center_.y(),
                 bot_plane->center_.z(), bot_plane->normal_.x(),
                 bot_plane->normal_.y(), bot_plane->normal_.z());
-        utility::write_plane_mesh_ply("bottom_plane.ply", *bot_plane,
+        utility::write_plane_mesh_ply(ddir + "bottom_plane.ply", *bot_plane,
                                       bottom_cloud->GetMinBound().x(),
                                       bottom_cloud->GetMaxBound().x(),
                                       bottom_cloud->GetMinBound().y(),
@@ -459,7 +482,7 @@ void DiskLevelMeasurement::measure_pindisk_heightlevel(
                 central_plane->center_.x(), central_plane->center_.y(),
                 central_plane->center_.z(), central_plane->normal_.x(),
                 central_plane->normal_.y(), central_plane->normal_.z());
-        utility::write_plane_mesh_ply("central_plane.ply", *central_plane,
+        utility::write_plane_mesh_ply(ddir + "central_plane.ply", *central_plane,
                                       central_cloud->GetMinBound().x(),
                                       central_cloud->GetMaxBound().x(),
                                       central_cloud->GetMinBound().y(),
@@ -666,7 +689,9 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
         float distance_threshold,
         int min_planar_points,
         bool use_ransac,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
+    std::string ddir = prepare_debug_dir(debug_mode, debug_path);
     Eigen::Vector3d centroid;
     if (disk_centre.first) {
         centroid =
@@ -715,7 +740,7 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range(
     if (debug_mode) {
         LOG_DEBUG("Centroid plane normal: [{},{},{}]", max_plane->normal_[0],
                   max_plane->normal_[1], max_plane->normal_[2]);
-        utility::write_ply("centroid_pts.ply", max_plane->inlier_points_);
+        utility::write_ply(ddir + "centroid_pts.ply", max_plane->inlier_points_);
     }
 
     core::PlaneDetection plane_detector;
@@ -739,7 +764,9 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range_all(
         float distance_threshold,
         int min_planar_points,
         bool use_ransac,
-        bool debug_mode) {
+        bool debug_mode,
+        const std::string& debug_path) {
+    std::string ddir = prepare_debug_dir(debug_mode, debug_path);
     std::vector<geometry::Plane::Ptr> planes;
     segment_plane_instances(region_cloud, param, planes, normal_angle_threshold,
                             min_planar_points, debug_mode);
@@ -762,7 +789,7 @@ geometry::Plane::Ptr DiskLevelMeasurement::get_plane_in_range_all(
     }
 
     if (debug_mode) {
-        utility::write_ply("centroid_pts.ply", max_plane->inlier_points_);
+        utility::write_ply(ddir + "centroid_pts.ply", max_plane->inlier_points_);
     }
 
     core::PlaneDetection plane_detector;
